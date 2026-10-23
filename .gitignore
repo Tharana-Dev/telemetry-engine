@@ -1,1 +1,18 @@
-__pycache__/, *.pyc, .venv/, practice/
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Custom project folders
+practice/
+
+# OS/Editor files (Optional but highly recommended)
+.DS_Store
+.vscode/
+.idea/
