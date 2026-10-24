@@ -1,0 +1,7 @@
+# Testing Framework
+pytest==9.1.1
+pluggy==1.7.0
+
+# Optional GUI Testing Plugins (Detected in your WSL environment)
+pytest-qt==4.5.0
+PySide6==6.12.0
