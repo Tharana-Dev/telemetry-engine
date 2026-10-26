@@ -1,17 +1,12 @@
-from dataclasses import dataclass
+from engine.models import MemorySnapshot
 import os
 import time
 
-@dataclass(frozen=True)
-class MemorySnapshot:
-    total_gb: float
-    used_gb: float
-    used_pct: float
-    available_gb: float
-    
 class LinuxMemorySampler:
     def __init__(self, mem_path: str = "/proc/meminfo"):
         self.memory_path = mem_path
+        with open(self.memory_path, "r", encoding='utf-8') as f:
+            f.readline()
     
     def get_snapshot(self) -> MemorySnapshot:
         mem = self.get_mem_data()
@@ -38,20 +33,23 @@ class LinuxMemorySampler:
             available_gb=available            
         )
 
-        
     def get_mem_data(self) -> dict[str, int]:
         mem_info: dict[str, int] = {}
         
-        with open(self.memory_path, "r", encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        for line in lines:
-            parts: list = line.split(':', 1)
-            if len(parts) < 2:
-                continue
-            key = parts[0].strip()
-            value_parts = parts[1].split()
-            if value_parts:
-                mem_info[key] = int(value_parts[0])
-        
+        try:
+            with open(self.memory_path, "r", encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            for line in lines:
+                parts: list = line.split(':', 1)
+                if len(parts) < 2:
+                    continue
+                key = parts[0].strip()
+                value_parts = parts[1].split()
+                if value_parts:
+                    mem_info[key] = int(value_parts[0])
+        except (IOError, ValueError):
+            # Safe runtime fallback if access changes while loop runs
+            return {}
+            
         return mem_info

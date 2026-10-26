@@ -1,10 +1,6 @@
-from dataclasses import dataclass
+from engine.models import CpuSnapshot
 import time
 import os
-
-@dataclass(frozen=True)
-class CpuSnapshot:
-    usage_pct: float
 
 class LinuxCpuSampler:
     def __init__(self, stat_path: str = "/proc/stat"):
@@ -24,7 +20,6 @@ class LinuxCpuSampler:
             parts = line.split()
             cpu_times = [float(x) for x in parts[1:]]
             
-            # Guard check: Ensure we have enough columns for idle (index 3) and iowait (index 4)
             if len(cpu_times) < 5:
                 return 0.0, 0.0
                 
@@ -33,10 +28,17 @@ class LinuxCpuSampler:
             
             return total, idle
         except (IOError, ValueError, IndexError):
-            # Gracefully fall back to zero states if file errors, value conversion issues, or bounds exceptions occur
             return 0.0, 0.0
 
     def _initialize_first_tick(self) -> None:
+        # Early Health Check: Intentionally bypass the internal catch blocks 
+        # so instantiation explicitly throws if the environment is restricted.
+        with open(self.stat_path, "r", encoding="utf-8") as f:
+            first_line = f.readline()
+            if not first_line:
+                raise FileNotFoundError(f"Empty stat file at {self.stat_path}")
+        
+        # If the file verification passes, seed the primary parameters
         self._last_total, self._last_idle = self._get_raw_times()
 
     def get_snapshot(self) -> CpuSnapshot:
@@ -48,7 +50,6 @@ class LinuxCpuSampler:
         self._last_total = current_total
         self._last_idle = current_idle
         
-        # Protects against zero movement or double fallback zero matching scenarios
         if delta_total <= 0:
             return CpuSnapshot(usage_pct=0.0)
             
