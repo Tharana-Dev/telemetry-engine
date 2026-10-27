@@ -1,6 +1,7 @@
 import os
 import pytest
-from engine.linux_memory import LinuxMemorySampler, MemorySnapshot
+from engine.linux_memory import LinuxMemorySampler 
+from engine.models import MemorySnapshot
 
 FIXTURE_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "mock_meminfo.txt")
 

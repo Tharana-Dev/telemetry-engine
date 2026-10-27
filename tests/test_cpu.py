@@ -1,5 +1,6 @@
 import pytest
-from engine.linux_cpu import LinuxCpuSampler, CpuSnapshot
+from engine.linux_cpu import LinuxCpuSampler
+from engine.models import CpuSnapshot
 
 def test_cpu_sampler_happy_path(tmp_path):
     """Tests perfect calculation math across two consecutive tick timelines."""

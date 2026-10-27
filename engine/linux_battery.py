@@ -2,18 +2,12 @@ from engine.models import BatterySnapshot
 import os
 
 class LinuxBatterySampler:
-    def __init__(self, sys_path: str = "/sys/class/power_supply/") -> None:
+    def __init__(self, sys_path: str | None = "/sys/class/power_supply/") -> None:
         self.main_path = sys_path
         
         bat_folders = [f for f in os.listdir(self.main_path) if f.startswith('BAT')]
         ac_folders = [f for f in os.listdir(self.main_path) if f.startswith('AC')]
         
-        battery_folder = bat_folders[0]
-        ac_folder = ac_folders[0]
-        
-        self.battery_path = os.path.join(self.main_path, battery_folder)
-        self.ac_path = os.path.join(self.main_path, ac_folder)
-
         if not bat_folders or not ac_folders:
             self.battery_path = None
             self.ac_path = None
@@ -22,8 +16,12 @@ class LinuxBatterySampler:
             self.ac_path = os.path.join(self.main_path, ac_folders[0])
     
     def get_battery_snapshot(self) -> BatterySnapshot | None:
-        if self.battery_path is  None or  self.ac_path is  None:
+        if self.battery_path is  None:
             return None
+        
+        if self.ac_path is None:
+            return None
+        
         with open(os.path.join(self.ac_path, "online"), 'r', encoding='utf-8') as f:
             online = f.read().strip() == "1"
             

@@ -30,14 +30,7 @@ class PsutilCollector(BaseSystemCollector):
         battery = psutil.sensors_battery()
         
         if battery is None:
-            return BatterySnapshot(
-                online=True,
-                status="AC Power Only",
-                capacity=100,
-                power_watts=0.0,
-                hours_left=0.0,
-                health_percent=100.0
-            )
+            return None
         
         if battery.power_plugged is True or battery.power_plugged is None:
             online = True

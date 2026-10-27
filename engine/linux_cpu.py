@@ -7,7 +7,10 @@ class LinuxCpuSampler:
         self.stat_path = stat_path
         self._last_total = 0.0
         self._last_idle = 0.0
-        self._initialize_first_tick()
+        try:
+            self._initialize_first_tick()
+        except FileNotFoundError:
+            pass # File doesn't exist, leave as 0.0
 
     def _get_raw_times(self) -> tuple[float, float]:
         try:
