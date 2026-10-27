@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from engine.models import CpuSnapshot, MemorySnapshot
+from engine.models import BatterySnapshot, CpuSnapshot, MemorySnapshot
 
 class BaseSystemCollector(ABC):
     @abstractmethod
@@ -10,3 +10,6 @@ class BaseSystemCollector(ABC):
     def get_memory_snapshot(self) -> MemorySnapshot:
         ...
         
+    @abstractmethod
+    def get_battery_snapshot(self) -> BatterySnapshot | None:
+        ...

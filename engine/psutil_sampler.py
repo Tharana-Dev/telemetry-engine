@@ -1,5 +1,6 @@
-from engine.models import CpuSnapshot, MemorySnapshot
+from engine.models import BatterySnapshot, CpuSnapshot, MemorySnapshot
 from engine.linux_sampler import BaseSystemCollector
+
 import psutil
 
 class PsutilCollector(BaseSystemCollector):
@@ -24,3 +25,39 @@ class PsutilCollector(BaseSystemCollector):
             used_pct=used_pct,
             available_gb=available_gb
     )
+    
+    def get_battery_snapshot(self) -> BatterySnapshot | None:
+        battery = psutil.sensors_battery()
+        
+        if battery is None:
+            return BatterySnapshot(
+                online=True,
+                status="AC Power Only",
+                capacity=100,
+                power_watts=0.0,
+                hours_left=0.0,
+                health_percent=100.0
+            )
+        
+        if battery.power_plugged is True or battery.power_plugged is None:
+            online = True
+            status = "Full" if battery.percent == 100 else "Charging"
+        else:
+            online = False
+            status = "Discharging"
+        
+        hours_left = 0.0 if battery.secsleft in (-1,-2) or battery.secsleft <0 else round(battery.secsleft / 3600, 2)
+        
+        #FallBack
+        
+        power_watts = 0.0
+        health_percent = 100.0
+        
+        return BatterySnapshot(
+            online=online,
+            status=status,
+            capacity=int(battery.percent),
+            power_watts=power_watts,
+            hours_left= hours_left,
+            health_percent= health_percent
+        )    
