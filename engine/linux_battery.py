@@ -2,8 +2,8 @@ from engine.models import BatterySnapshot
 import os
 
 class LinuxBatterySampler:
-    def __init__(self) -> None:
-        self.main_path = '/sys/class/power_supply/'
+    def __init__(self, sys_path: str = "/sys/class/power_supply/") -> None:
+        self.main_path = sys_path
         
         bat_folders = [f for f in os.listdir(self.main_path) if f.startswith('BAT')]
         ac_folders = [f for f in os.listdir(self.main_path) if f.startswith('AC')]
