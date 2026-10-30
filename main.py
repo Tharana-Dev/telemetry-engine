@@ -27,6 +27,7 @@ def main():
             # Gather fresh snapshots
             memory = data.get_memory_snapshot()
             battery = data.get_battery_snapshot()
+            thermal = data.get_thermal_snapshot()  # Moved out of the battery block to prevent NameError
             os.system(clear_command)
             
             print("====================================") 
@@ -88,6 +89,34 @@ def main():
                 print(f"Power Draw:               {draw_str}")
                 print(f"Time Estimate:            {time_str}")
                 print(f"Battery Health:           {health_str}")
+
+            # --- THERMAL TELEMETRY BLOCK ---
+            print("====================================")
+            print("         THERMAL TELEMETRY          ")
+            print("====================================")
+
+            if thermal.sensor_available:
+                print(f"CPU Vendor:               {thermal.cpu_vendor}")
+                print(f"Motherboard:              {thermal.board_vendor}")
+                
+                # Format CPU temps safely
+                cpu_t = f"{thermal.cpu_temp}°C" if thermal.cpu_temp is not None else "N/A"
+                cpu_m = f"{thermal.cpu_temp_max}°C" if thermal.cpu_temp_max is not None else "N/A"
+                print(f"CPU Temp:                 {cpu_t} (Max: {cpu_m})")
+                
+                if thermal.system_fans:
+                    for fan, rpm in thermal.system_fans.items():
+                        print(f"{fan.capitalize()}:                  {rpm} RPM")
+                else:
+                    print("System Fans:              N/A")
+            else:
+                print(f"Sensor Error:             {thermal.sensor_error}")
+
+            if thermal.gpu_available:
+                print(f"GPU Temp:                 {thermal.gpu_temp}°C")
+                print(f"GPU Fan:                  {thermal.gpu_fan if thermal.gpu_fan is not None else 'N/A (Restricted)'}")
+            else:
+                print(f"GPU Status:               {thermal.gpu_error}")
                 
             print("====================================") 
             print("\nPress Ctrl+C to exit.")

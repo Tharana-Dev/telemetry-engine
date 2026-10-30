@@ -1,5 +1,7 @@
 from engine.models import BatterySnapshot, CpuSnapshot, MemorySnapshot
 from engine.linux_sampler import BaseSystemCollector
+from engine.models import ThermalSnapshot
+
 
 import psutil
 
@@ -54,3 +56,10 @@ class PsutilCollector(BaseSystemCollector):
             hours_left= hours_left,
             health_percent= health_percent
         )    
+
+    def get_thermal_snapshot(self) -> ThermalSnapshot:
+        return ThermalSnapshot(
+            gpu_available=False, 
+            sensor_available=False,
+            sensor_error="Thermal sensors not yet supported on this platform."
+        )
