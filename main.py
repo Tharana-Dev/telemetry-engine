@@ -27,7 +27,7 @@ def main():
             # Gather fresh snapshots
             memory = data.get_memory_snapshot()
             battery = data.get_battery_snapshot()
-            thermal = data.get_thermal_snapshot()  # Moved out of the battery block to prevent NameError
+            thermal = data.get_thermal_snapshot()  # Contains the updated .gpus multi-GPU array
             os.system(clear_command)
             
             print("====================================") 
@@ -61,7 +61,6 @@ def main():
             if battery is None:
                 print("Battery:                  Not Detected (Desktop/Server)")
             else:
-                # Interrogate status string & format remaining time nicely
                 if battery.status == "Discharging" and battery.hours_left > 0:
                     hours = int(battery.hours_left)
                     minutes = int((battery.hours_left - hours) * 60)
@@ -71,14 +70,11 @@ def main():
                 else:
                     time_str = "Calculating..."
 
-                # Interrogate health percentage
-                # Using -1 or 0 to track unsupported values on cross-platform fallbacks
                 if battery.health_percent <= 0 or (fallback_active and battery.health_percent == 100.0):
                     health_str = "N/A (OS Wrapper Restriction)"
                 else:
                     health_str = f"{battery.health_percent:.1f}%"
 
-                # Interrogate draw/wattage values
                 if battery.power_watts <= 0:
                     draw_str = "N/A (OS Wrapper Restriction)"
                 else:
@@ -99,7 +95,6 @@ def main():
                 print(f"CPU Vendor:               {thermal.cpu_vendor}")
                 print(f"Motherboard:              {thermal.board_vendor}")
                 
-                # Format CPU temps safely
                 cpu_t = f"{thermal.cpu_temp}°C" if thermal.cpu_temp is not None else "N/A"
                 cpu_m = f"{thermal.cpu_temp_max}°C" if thermal.cpu_temp_max is not None else "N/A"
                 print(f"CPU Temp:                 {cpu_t} (Max: {cpu_m})")
@@ -112,9 +107,29 @@ def main():
             else:
                 print(f"Sensor Error:             {thermal.sensor_error}")
 
+            # --- UPDATED: MULTI-GPU RENDER ENGINE ---
             if thermal.gpu_available:
-                print(f"GPU Temp:                 {thermal.gpu_temp}°C")
-                print(f"GPU Fan:                  {thermal.gpu_fan if thermal.gpu_fan is not None else 'N/A (Restricted)'}")
+                if thermal.gpus:
+                    for gpu in thermal.gpus:
+                        # Extract metrics safely from dictionary maps
+                        g_name = gpu.get("name", "Unknown GPU")
+                        g_temp = gpu.get("temperature_c")
+                        g_util = gpu.get("utilization_pct")
+                        g_watt = gpu.get("power_w")
+                        g_fan  = gpu.get("fan_speed_pct")
+                        
+                        fan_str = f"{g_fan}%" if g_fan is not None else "N/A (EC Owned)"
+                        
+                        print(f"GPU [{gpu.get('index', 0)}]:                 {g_name}")
+                        print(f"  Temp / Util:            {g_temp}°C / {g_util}%")
+                        print(f"  Power Draw:             {g_watt} W")
+                        print(f"  Fan Speed:              {fan_str}")
+                else:
+                    # Fallback UI layout using the __post_init__ auto-mapped parent attributes
+                    print(f"GPU Temp:                 {thermal.gpu_temp}°C")
+                    print(f"GPU Fan:                  {thermal.gpu_fan if thermal.gpu_fan is not None else 'N/A'}")
+                    print(f"GPU Usage:                {thermal.gpu_usage}%")
+                    print(f"GPU Power:                {thermal.gpu_power_watts} W")
             else:
                 print(f"GPU Status:               {thermal.gpu_error}")
                 
