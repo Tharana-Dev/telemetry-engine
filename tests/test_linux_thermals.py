@@ -116,7 +116,7 @@ def test_errors_sensors():
         sampler = LinuxThermalSampler()
         result = sampler._get_sensors()
         
-        assert result.error == ThermalError.NOT_FOUND
+        assert result.error == ThermalError.NOT_PRESENT
         assert result.data is None
 
     with patch("subprocess.run") as mock_run:
@@ -166,7 +166,7 @@ def test_errors_nvidia():
         sampler = LinuxThermalSampler()
         result = sampler._get_nvidia()
         
-        assert result.error == ThermalError.NOT_FOUND
+        assert result.error == ThermalError.NOT_PRESENT
         assert result.data is None
 
     with patch("subprocess.run") as mock_run:

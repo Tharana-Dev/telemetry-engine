@@ -29,6 +29,7 @@ BOARD_LOOKUP = {
 
 class ThermalError(Enum):
     NOT_FOUND = "NVIDIA tool or sensors command not found."
+    NOT_PRESENT = "No NVIDIA GPU detected or driver not installed."
     BROKEN_DRIVER = "Driver crashed or returned an error code."
     TIMEOUT = "Hardware query timed out."
     PARSE_FAILED = "Could not parse hardware output (format changed)."
@@ -41,7 +42,6 @@ class InternalResult:
     error: ThermalError | None = None
 
 class LinuxThermalSampler:
-    def __init__(self):...
     
     def _get_nvidia(self) -> InternalResult:
         try:
@@ -73,7 +73,7 @@ class LinuxThermalSampler:
             return InternalResult(data=nvidia_results)
             
         except FileNotFoundError:
-            return InternalResult(error=ThermalError.NOT_FOUND)
+            return InternalResult(error=ThermalError.NOT_PRESENT)
         except subprocess.CalledProcessError:
             return InternalResult(error=ThermalError.BROKEN_DRIVER)
         except subprocess.TimeoutExpired:
@@ -139,7 +139,7 @@ class LinuxThermalSampler:
             return InternalResult(data=sensor_data)
             
         except FileNotFoundError:
-            return InternalResult(error=ThermalError.NOT_FOUND)
+            return InternalResult(error=ThermalError.NOT_PRESENT)
         except subprocess.CalledProcessError:
             return InternalResult(error=ThermalError.BROKEN_DRIVER)
         except subprocess.TimeoutExpired:
@@ -183,6 +183,8 @@ class LinuxThermalSampler:
                         system_fans[k] = int(float(v))
                     except (ValueError, TypeError):
                         pass # Skip the fan if it's [N/A] or malformed
+            if not system_fans:
+                system_fans = None
             
             cpu_vendor = sensor_data.data.get('cpu_vendor', 'Unknown')
             board_vendor = sensor_data.data.get('board_vendor', 'Unknown')
@@ -195,8 +197,8 @@ class LinuxThermalSampler:
             system_fans=system_fans,
             gpu_temp=gpu_temp,
             gpu_fan=gpu_fan,
-            gpu_available=bool(gpu_data.data),     
-            sensor_available=bool(sensor_data.data),
+            gpu_available = gpu_data.data is not None,
+            sensor_available = sensor_data.data is not None,
             cpu_vendor=cpu_vendor,
             board_vendor=board_vendor,
             gpu_error=gpu_error,
