@@ -13,7 +13,7 @@ class LinuxMemorySampler:
         
         mem_total = mem.get("MemTotal", 0)
         mem_available = mem.get("MemAvailable", 0)
-        
+         
         if mem_total <= 0:
             return MemorySnapshot(
                 total_gb=0.0,
@@ -27,10 +27,10 @@ class LinuxMemorySampler:
         real_used_pct = (1.0 - (available / total)) * 100
         
         return MemorySnapshot(
-            total_gb=total,
-            used_gb=total - available,
-            used_pct=real_used_pct,
-            available_gb=available            
+            total_gb=round(total,2),
+            used_gb=round((total - available),2),
+            used_pct=round(real_used_pct,2),
+            available_gb=round(available,2)            
         )
 
     def get_mem_data(self) -> dict[str, int]:

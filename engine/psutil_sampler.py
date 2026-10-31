@@ -1,8 +1,6 @@
 from engine.models import BatterySnapshot, CpuSnapshot, MemorySnapshot
-from engine.linux_sampler import BaseSystemCollector
+from engine.base_sampler import BaseSystemCollector
 from engine.models import ThermalSnapshot
-
-
 import psutil
 
 class PsutilCollector(BaseSystemCollector):

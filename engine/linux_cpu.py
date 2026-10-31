@@ -26,7 +26,7 @@ class LinuxCpuSampler:
             if len(cpu_times) < 5:
                 return 0.0, 0.0
                 
-            total = sum(cpu_times)
+            total = sum(cpu_times[:8])
             idle = cpu_times[3] + cpu_times[4]
             
             return total, idle
