@@ -1,0 +1,95 @@
+import re
+import time
+import psutil
+from engine.models import DiskIOSnapshot, DiskSpaceSnapshot
+from engine.results_and_errors import Errors, InternalResult
+
+DEVICE_PATTERN = re.compile(
+    r'^(?:sd[a-z]+|hd[a-z]+|vd[a-z]+|nvme\d+n\d+|mmcblk\d+)$'
+)
+
+class LinuxDisk:
+    def __init__(self, diskstats_path: str = '/proc/diskstats') -> None:
+        self.diskstats_path = diskstats_path
+        self.root_path = '/'
+        self._last_stats = None
+        self._last_time = None
+    
+    def _get_disk_stats(self) -> InternalResult:
+        stats: dict[str, dict[str, int]] = {}
+        try:
+            with open(self.diskstats_path, 'r') as f:
+                for line in f:
+                    fields = line.split()
+                    if len(fields) < 14:
+                        continue
+                    dev_name = fields[2]
+                    if not DEVICE_PATTERN.match(dev_name):
+                        continue
+                    stats[dev_name] = {
+                        "read": int(fields[5]),
+                        "write": int(fields[9]),
+                    }
+            if not stats:
+                return InternalResult(error=Errors.NOT_PRESENT)
+            return InternalResult(data=stats)
+        except FileNotFoundError:
+            return InternalResult(error=Errors.FILE_NOT_FOUND)
+        except PermissionError:
+            return InternalResult(error=Errors.PERMISSION_DENIED)
+        except (ValueError, IndexError):
+            return InternalResult(error=Errors.PARSE_FAILED)
+        except Exception:
+            return InternalResult(error=Errors.UNKNOWN)
+        
+    def get_io_snapshot(self) -> list[DiskIOSnapshot]:
+        current_time = time.time()
+        result = self._get_disk_stats()
+        
+        # If we failed to read, return empty
+        if result.error or not result.data:
+            return []
+            
+        current_stats = result.data
+        
+        # First run: prime the baseline and return 0.0
+        if self._last_stats is None or self._last_time is None:
+            self._last_stats = current_stats
+            self._last_time = current_time
+            return []
+
+        duration = current_time - self._last_time
+        if duration <= 0:
+            duration = 1.0
+            
+        snapshots = []
+        for dev, data2 in current_stats.items():
+            if dev in self._last_stats:
+                data1 = self._last_stats[dev]
+                
+                read_delta = data2["read"] - data1["read"]
+                write_delta = data2["write"] - data1["write"]
+                
+                read_mb_s = (read_delta * 512) / (1024 * 1024) / duration
+                write_mb_s = (write_delta * 512) / (1024 * 1024) / duration
+                
+                snapshots.append(DiskIOSnapshot(
+                    device=dev,
+                    read_mbps=round(read_mb_s, 2),
+                    write_mbps=round(write_mb_s, 2)
+                ))
+                
+        # Update baseline for next run
+        self._last_stats = current_stats
+        self._last_time = current_time
+        
+        return snapshots
+
+    def get_space_snapshot(self) -> DiskSpaceSnapshot:
+        usage = psutil.disk_usage(self.root_path)
+        return DiskSpaceSnapshot(
+            total_gb=round(usage.total / (1024**3), 2),
+            used_gb=round(usage.used / (1024**3), 2),
+            free_gb=round(usage.free / (1024**3), 2),
+            percent=round(usage.percent, 1)
+        )

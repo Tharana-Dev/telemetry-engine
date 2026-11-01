@@ -1,7 +1,7 @@
-from engine.models import BatterySnapshot, CpuSnapshot, MemorySnapshot
+from engine.models import BatterySnapshot, CpuSnapshot, DiskIOSnapshot, MemorySnapshot, ThermalSnapshot, DiskIOSnapshot, DiskSpaceSnapshot
 from engine.base_sampler import BaseSystemCollector
-from engine.models import ThermalSnapshot
 import psutil
+
 
 class PsutilCollector(BaseSystemCollector):
     def __init__(self) -> None:
@@ -61,3 +61,12 @@ class PsutilCollector(BaseSystemCollector):
             sensor_available=False,
             sensor_error="Thermal sensors not yet supported on this platform."
         )
+
+
+    def get_disk_io_snapshot(self) -> list[DiskIOSnapshot]:
+        # TODO: Implement Windows/Mac disk I/O fallback later
+        return []
+
+    def get_disk_space_snapshot(self) -> DiskSpaceSnapshot:
+        # TODO: Implement Windows/Mac disk space later
+        return DiskSpaceSnapshot(total_gb=0.0, used_gb=0.0, free_gb=0.0, percent=0.0)

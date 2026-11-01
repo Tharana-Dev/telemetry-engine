@@ -1,6 +1,7 @@
 from unittest.mock import patch, MagicMock
 import subprocess
-from engine.linux_thermal import LinuxThermalSampler, ThermalError
+from engine.linux_thermal import LinuxThermalSampler
+from engine.results_and_errors import Errors
 import json
 import pynvml
 
@@ -185,7 +186,7 @@ def test_nvidia_no_gpus():
         sampler = LinuxThermalSampler()
         result = sampler._get_nvidia()
 
-        assert result.error == ThermalError.NOT_PRESENT
+        assert result.error == Errors.NOT_PRESENT
         assert result.data is None
 
 
@@ -194,7 +195,7 @@ def test_nvidia_library_not_found():
         sampler = LinuxThermalSampler()
         result = sampler._get_nvidia()
 
-        assert result.error == ThermalError.NOT_PRESENT
+        assert result.error == Errors.NOT_PRESENT
         assert result.data is None
 
 
@@ -204,7 +205,7 @@ def test_nvidia_generic_nvml_error():
         sampler = LinuxThermalSampler()
         result = sampler._get_nvidia()
 
-        assert result.error == ThermalError.PYNVML_ERROR
+        assert result.error == Errors.PYNVML_ERROR
         assert result.data is None
 
 
@@ -214,7 +215,7 @@ def test_nvidia_unknown_error():
         sampler = LinuxThermalSampler()
         result = sampler._get_nvidia()
 
-        assert result.error == ThermalError.UNKNOWN
+        assert result.error == Errors.UNKNOWN
         assert result.data is None
 
 
@@ -263,21 +264,21 @@ def test_errors_sensors():
     # sensors binary missing -> SENSORS_NOT_INSTALLED
     with patch("subprocess.run", side_effect=FileNotFoundError):
         result = LinuxThermalSampler()._get_sensors()
-        assert result.error == ThermalError.SENSORS_NOT_INSTALLED
+        assert result.error == Errors.SENSORS_NOT_INSTALLED
         assert result.data is None
 
     # sensors exited non-zero -> SENSORS_ERROR
     with patch("subprocess.run",
                side_effect=subprocess.CalledProcessError(returncode=1, cmd="sensors")):
         result = LinuxThermalSampler()._get_sensors()
-        assert result.error == ThermalError.SENSORS_ERROR
+        assert result.error == Errors.SENSORS_ERROR
         assert result.data is None
 
     # sensors hung -> TIMEOUT
     with patch("subprocess.run",
                side_effect=subprocess.TimeoutExpired(cmd="sensors", timeout=2)):
         result = LinuxThermalSampler()._get_sensors()
-        assert result.error == ThermalError.TIMEOUT
+        assert result.error == Errors.TIMEOUT
         assert result.data is None
 
     # malformed JSON -> PARSE_FAILED
@@ -285,11 +286,11 @@ def test_errors_sensors():
                side_effect=json.decoder.JSONDecodeError(
                    msg="Expecting value", doc="{invalid json}", pos=1)):
         result = LinuxThermalSampler()._get_sensors()
-        assert result.error == ThermalError.PARSE_FAILED
+        assert result.error == Errors.PARSE_FAILED
         assert result.data is None
 
     # anything else -> UNKNOWN
     with patch("subprocess.run", side_effect=TypeError):
         result = LinuxThermalSampler()._get_sensors()
-        assert result.error == ThermalError.UNKNOWN
+        assert result.error == Errors.UNKNOWN
         assert result.data is None

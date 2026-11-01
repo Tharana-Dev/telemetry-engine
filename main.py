@@ -53,6 +53,20 @@ def main():
                 thermal = None
                 thermal_error = str(e)
 
+            try:
+                disk_io = data.get_disk_io_snapshot()
+                disk_io_error = None
+            except Exception as e:
+                disk_io = None
+                disk_io_error = str(e)
+
+            try:
+                disk_space = data.get_disk_space_snapshot()
+                disk_space_error = None
+            except Exception as e:
+                disk_space = None
+                disk_space_error = str(e)
+
             os.system(clear_command)
             
             print("====================================") 
@@ -144,7 +158,6 @@ def main():
                 else:
                     print(f"Sensor Error:             {thermal.sensor_error}")
 
-                # --- UPDATED: MULTI-GPU RENDER ENGINE (attribute access) ---
                 if thermal.gpu_available:
                     if thermal.gpus:
                         for gpu in thermal.gpus:
@@ -164,13 +177,38 @@ def main():
                             print(f"  Power Draw:             {watt_str}")
                             print(f"  Fan Speed:              {fan_str}")
                     else:
-                        # Fallback UI layout using the __post_init__ auto-mapped parent attributes
                         print(f"GPU Temp:                 {thermal.gpu_temp if thermal.gpu_temp is not None else 'N/A'}")
                         print(f"GPU Fan:                  {thermal.gpu_fan if thermal.gpu_fan is not None else 'N/A'}")
                         print(f"GPU Usage:                {thermal.gpu_usage if thermal.gpu_usage is not None else 'N/A'}")
                         print(f"GPU Power:                {thermal.gpu_power_watts if thermal.gpu_power_watts is not None else 'N/A'}")
                 else:
                     print(f"GPU Status:               {thermal.gpu_error}. Check If you are using ECO mode.")
+                
+            # --- DISK TELEMETRY BLOCK ---
+            print("====================================")
+            print("          DISK TELEMETRY            ")
+            print("====================================")
+
+            if disk_space_error is not None:
+                print(f"Disk Space:               Unavailable ({disk_space_error})")
+            elif disk_space is not None:
+                print(f"Total Space:              {disk_space.total_gb} GB")
+                print(f"Used Space:               {disk_space.used_gb} GB")
+                print(f"Free Space:               {disk_space.free_gb} GB")
+                print(f"Disk Usage Percentage:    {disk_space.percent}%")
+            
+            print("------------------------------------")
+
+            if disk_io_error is not None:
+                print(f"Disk I/O:                 Unavailable ({disk_io_error})")
+            elif disk_io is not None:
+                if not disk_io:
+                    print("Disk I/O:                 Initializing... (Requires 1s delta)")
+                else:
+                    for io in disk_io:
+                        print(f"{io.device}:")
+                        print(f"  Read Speed:             {io.read_mbps} MB/s")
+                        print(f"  Write Speed:            {io.write_mbps} MB/s")
                 
             print("====================================") 
             print("\nPress Ctrl+C to exit.")

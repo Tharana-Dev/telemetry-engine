@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any
+from enum import Enum
 
 @dataclass(frozen=True)
 class MemorySnapshot:
@@ -58,3 +59,18 @@ class ThermalSnapshot:
             object.__setattr__(self, "gpu_fan", first_gpu.fan_speed_pct)
             object.__setattr__(self, "gpu_usage", first_gpu.utilization_pct)
             object.__setattr__(self, "gpu_power_watts", first_gpu.power_w)
+
+
+@dataclass(frozen=True)
+class DiskIOSnapshot:
+    device: str
+    read_mbps: float
+    write_mbps: float
+
+@dataclass(frozen=True)
+class DiskSpaceSnapshot:
+    total_gb: float
+    used_gb: float
+    free_gb: float
+    percent: float            
+            
