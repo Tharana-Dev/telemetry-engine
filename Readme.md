@@ -102,7 +102,7 @@ pytest -v
 - **Hardware Mocking:** Simulates `lm-sensors`, `pynvml`, and `/proc/diskstats` across various hardware profiles.
 - **Robustness Checks:** Forces edge situations including blank tracking paths, zero core totals, desktop battery fallbacks, bad integer parsing, and partition filtering.
 - **Fault Tolerance:** Verifies that missing tools and malformed data return specific error states rather than crashing.
-```
+
 
 ## ⚠️ Known Limitations
 
@@ -120,3 +120,8 @@ As a systems-level engine interacting directly with hardware, behavior varies he
   - The engine only monitors the primary root partition (`/` on Linux, `C:\` on Windows). It does not iterate through secondary mounts, Snap packages, or Docker overlay filesystems.
 - **Optional System Dependencies:**
   - On Linux, deep CPU/Motherboard sensors require the `lm-sensors` package (`sudo apt install lm-sensors`). If missing, the engine gracefully degrades and reports `SENSORS_NOT_INSTALLED`.
+- **psutil Battery & CPU Restrictions (Windows/macOS):**
+  - **Battery Placeholders:** The `psutil` fallback cannot read battery power draw or hardware health on Windows/macOS. It will report `0.0 W` for power draw and `100.0%` for health as placeholders. These are not real readings.
+  - **CPU First-Read Drop:** `psutil.cpu_percent()` requires a baseline. On the very first cycle, it returns `0.0%` until the next interval completes.
+- **Network Telemetry (WSL):**
+  - Network data inside WSL represents the virtualized Hyper-V adapter, not the physical Windows host Wi-Fi or Ethernet card. Speeds will reflect WSL traffic, which may differ from the Windows host.
