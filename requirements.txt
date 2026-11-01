@@ -1,7 +1,12 @@
-# Testing Framework
+# Core Engine Dependencies
+psutil==5.9.8
+nvidia-ml-py==12.535.133
+
+# Testing Dependencies
 pytest==9.1.1
 pluggy==1.7.0
-
-# Optional GUI Testing Plugins (Detected in your WSL environment)
 pytest-qt==4.5.0
+
+# GUI Dependencies (Phase 2 - Upcoming)
 PySide6==6.12.0
+pyqtgraph==0.13.3

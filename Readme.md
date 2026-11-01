@@ -1,6 +1,7 @@
+
 # Telemetry Engine
 
-A high-performance, cross-platform system telemetry engine written in Python. It extracts deep system metrics by hooking directly into the Linux kernel virtual filesystem (`/proc` and `/sys`), utilizing `pynvml` for direct GPU driver access, and providing a graceful `psutil` fallback for Windows, macOS, and restricted environments.
+A high-performance, cross-platform system telemetry engine written in Python. It extracts deep system metrics by hooking directly into the Linux kernel virtual filesystem (`/proc` and `/sys`), utilizing `nvidia-ml-py` for direct GPU driver access, and providing a graceful `psutil` fallback for Windows, macOS, and restricted environments.
 
 ---
 
@@ -8,10 +9,11 @@ A high-performance, cross-platform system telemetry engine written in Python. It
 
 - **Cross-Platform Hardware Abstraction Layer (HAL):** Built on an Abstract Base Class (ABC) contract. The UI doesn't know or care if the data is coming from Linux kernel files, C-bindings, or Windows C-APIs; it just asks for the metrics.
 - **Linux Kernel-Direct Hooking:** Reads natively from `/proc/stat`, `/proc/meminfo`, and `/sys/class/power_supply/` to capture bare-metal statistics with near-zero overhead.
-- **Direct GPU Telemetry via NVML:** Drops fragile CLI parsing (`nvidia-smi`) in favor of NVIDIA's official C-bindings (`pynvml`). Supports multi-GPU setups, queries temperature, utilization, and power draw directly from the driver, and handles laptop Embedded Controller (EC) fan restrictions.
+- **Direct GPU Telemetry via NVML:** Drops fragile CLI parsing (`nvidia-smi`) in favor of NVIDIA's official C-bindings (`nvidia-ml-py`). Supports multi-GPU setups using a `GpuInfo` dataclass, queries temperature, utilization, and power draw directly from the driver, and handles laptop Embedded Controller (EC) fan restrictions.
 - **Deep Thermal Diagnostics:** Parses `lm-sensors` JSON output to extract CPU and Motherboard temperatures, dynamically mapping vendors (Intel, AMD, Lenovo, Dell, ASUS).
-- **The Result Pattern (Fault Tolerance):** Hardware queries are wrapped in an `InternalResult` dataclass. If a driver crashes, a tool is missing, or JSON parsing fails, the engine returns a specific `ThermalError` enum instead of crashing.
-- **Deep Battery Diagnostics:** Goes beyond basic percentages. Calculates real-time power draw (Watts), time remaining, and long-term hardware degradation (Health %), with fallbacks for both `energy_*` and `charge_*` sysfs paths.
+- **The Result Pattern (Fault Tolerance):** Hardware queries are wrapped in an `InternalResult` dataclass. If a driver crashes, a tool is missing, or JSON parsing fails, the engine returns a specific `ThermalError` enum instead of crashing. 
+- **Resilient Battery Diagnostics:** Goes beyond basic percentages. Calculates real-time power draw (Watts), time remaining, and long-term hardware degradation (Health %), with fallbacks for both `energy_*` and `charge_*` sysfs paths. Clamps health to 100% and handles negative current safely.
+- **Graceful Isolation:** The main CLI loop isolates each sampler. If the battery driver crashes, the CPU and Memory displays remain completely operational.
 
 ---
 
@@ -38,7 +40,7 @@ telemetry-engine/
 │   └── test_psutil.py
 ├── main.py                # Main executable application orchestrator
 ├── README.md              
-└── requirements.txt       # psutil, pynvml, pytest
+└── requirements.txt       # Dependencies
 ```
 
 ---
@@ -91,10 +93,10 @@ Memory Usage Percentage:  35.37%
 ====================================
          BATTERY TELEMETRY
 ====================================
-Status:                   Not charging
+Status:                   Discharging
 Capacity:                 80%
-Power Draw:               N/A (OS Wrapper Restriction)
-Time Estimate:            Wall Power (AC)
+Power Draw:               1.195 W
+Time Estimate:            3h 20m remaining
 Battery Health:           100.0%
 ====================================
          THERMAL TELEMETRY
@@ -124,10 +126,11 @@ Run the test collection using the `pytest` binary runner:
 pytest -v
 ```
 
-### Coverage Blueprint (20+ Passing Tests)
+### Coverage Blueprint (25 Passing Tests)
 
 - **Mathematical Accuracy:** Verifies unit conversion paths (Kilobytes/Gigabytes, MicroWatts/Watts) and CPU time delta operations.
-- **Hardware Mocking (GPU):** Verifies that `pynvml` successfully extracts temperature, utilization, and power draw, while gracefully catching `NVMLError_NotSupported` for fan speeds.
+- **Hardware Mocking (GPU):** Verifies that `pynvml` successfully extracts temperature, utilization, and power draw, while gracefully catching `NVMLError_NotSupported` for fan speeds and isolating failures to specific metrics.
 - **Hardware Mocking (Sensors):** Uses `patch` to simulate `lm-sensors` outputs across multiple hardware profiles (Intel/ThinkPad, AMD/Dell, AMD/ASUS).
-- **Robustness Checks:** Forces edge situations including completely blank tracking paths, zero core totals, desktop fallbacks, and missing system key arrays.
+- **Robustness Checks:** Forces edge situations including completely blank tracking paths, zero core totals, desktop fallbacks, bad battery integer parsing, and missing system key arrays.
 - **Fault Tolerance:** Verifies that `FileNotFoundError`, `CalledProcessError`, `TimeoutExpired`, and malformed JSON are safely caught and returned as specific error states.
+```
