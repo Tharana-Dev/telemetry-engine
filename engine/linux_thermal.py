@@ -1,10 +1,16 @@
-from engine.models import ThermalSnapshot
+from engine.models import ThermalSnapshot, GpuInfo
 import subprocess
 from dataclasses import dataclass
 import json
 from typing import Any
 from enum import Enum
 import pynvml
+
+# Pylance's pynvml stubs omit NVMLError_LibraryNotFound, but the runtime module
+# defines it (it subclasses NVMLError). getattr() returns Any so the type
+# checker stays quiet, and the fallback to NVMLError keeps this working if a
+# future pynvml release renames or removes the attribute.
+_LibraryNotFound = getattr(pynvml, "NVMLError_LibraryNotFound", pynvml.NVMLError)
 
 CPU_LOOKUP = {
     "coretemp": "Intel",
@@ -36,6 +42,8 @@ class ThermalError(Enum):
     PARSE_FAILED = "Could not parse hardware output (format changed)."
     UNKNOWN = "An unknown error occurred."
     PYNVML_ERROR = "NVMLError Occurred"
+    SENSORS_NOT_INSTALLED = "sensors command not installed."
+    SENSORS_ERROR = "sensors command returned an error."
 
 
 @dataclass(frozen=True)
@@ -43,8 +51,9 @@ class InternalResult:
     data: dict[str, Any] | None = None
     error: ThermalError | None = None
 
+
 class LinuxThermalSampler:
-    
+
     def _get_nvidia(self) -> InternalResult:
         initialized = False
         try:
@@ -55,44 +64,57 @@ class LinuxThermalSampler:
             if count == 0:
                 return InternalResult(error=ThermalError.NOT_PRESENT)
 
-            gpu_records = []
+            gpu_records: list[GpuInfo] = []
             NotSupportedError = getattr(pynvml, "NVMLError_NotSupported", pynvml.NVMLError)
 
             for i in range(count):
                 handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-                
+
                 name = pynvml.nvmlDeviceGetName(handle)
                 if isinstance(name, bytes):
                     name = name.decode("utf-8")
 
-                temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-                usage = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
-                
-                # Power is returned in milliwatts. Convert to Watts.
-                power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
-                power_watts = round(power_mw / 1000, 2)
+                try:
+                    temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+                except NotSupportedError:
+                    temp = None
 
-                fan_speed = None
+                try:
+                    usage = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
+                except NotSupportedError:
+                    usage = None
+
+                # Power is returned in milliwatts. Convert to Watts.
+                try:
+                    power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
+                    power_watts = round(power_mw / 1000, 2)
+                except NotSupportedError:
+                    power_watts = None
+
                 try:
                     fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
                 except NotSupportedError:
                     # EC owns the fan (common on laptops)
-                    pass 
+                    fan_speed = None
 
-                gpu_data = {
-                    "index": i,
-                    "name": name,
-                    "temperature_c": temp,
-                    "utilization_pct": usage,
-                    "power_w": power_watts,
-                    "fan_speed_pct": fan_speed
-                }
+                gpu_data = GpuInfo(
+                    index=i,
+                    name=name,
+                    temperature_c=temp,
+                    utilization_pct=usage,
+                    power_w=power_watts,
+                    fan_speed_pct=fan_speed
+                )
                 gpu_records.append(gpu_data)
-                
+
             return InternalResult(data={"gpus": gpu_records})
-        
+
+        except _LibraryNotFound:
+            return InternalResult(error=ThermalError.NOT_PRESENT)
         except pynvml.NVMLError:
             return InternalResult(error=ThermalError.PYNVML_ERROR)
+        except Exception:
+            return InternalResult(error=ThermalError.UNKNOWN)
         finally:
             if initialized:
                 try:
@@ -100,27 +122,26 @@ class LinuxThermalSampler:
                 except pynvml.NVMLError:
                     pass
 
-        
-    def _get_sensors(self):
+    def _get_sensors(self) -> InternalResult:
         try:
             res = subprocess.run(
-            ["sensors", "-j"], 
-            capture_output=True, 
-            text=True, 
-            check=True, 
-            timeout=2
-        )
-            
+                ["sensors", "-j"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=2
+            )
+
             data = json.loads(res.stdout)
-            
+
             cpu_temp = None
             cpu_max = None
             fans = {}
             cpu_vendor = "Unknown"
             board_vendor = "Unknown"
-            
+
             for driver_name, driver_data in data.items():
-                if not isinstance(driver_data,dict):
+                if not isinstance(driver_data, dict):
                     continue
 
                 for search_key, vendor in CPU_LOOKUP.items():
@@ -133,11 +154,11 @@ class LinuxThermalSampler:
                         elif "Tctl" in driver_data:
                             cpu_temp = driver_data["Tctl"].get("temp1_input")
                         break
-                                
+
                 for search_key, vendor in BOARD_LOOKUP.items():
                     if search_key in driver_name:
                         board_vendor = vendor
-                        break # Stop looking once found
+                        break  # Stop looking once found
 
                 # 3. Extract Fans
                 for key, value in driver_data.items():
@@ -145,7 +166,7 @@ class LinuxThermalSampler:
                         input_key = f"{key}_input"
                         if isinstance(value, dict) and input_key in value:
                             fans[key] = value[input_key]
-                            
+
             sensor_data = {
                 "cpu_temp": cpu_temp,
                 "cpu_max": cpu_max,
@@ -153,24 +174,26 @@ class LinuxThermalSampler:
                 "cpu_vendor": cpu_vendor,
                 "board_vendor": board_vendor
             }
-            
+
             return InternalResult(data=sensor_data)
-            
-        except FileNotFoundError:
-            return InternalResult(error=ThermalError.NOT_PRESENT)
+
+        except (FileNotFoundError, PermissionError):
+            # Binary missing from PATH, or present but not executable.
+            # Either way the user can't use it.
+            return InternalResult(error=ThermalError.SENSORS_NOT_INSTALLED)
         except subprocess.CalledProcessError:
-            return InternalResult(error=ThermalError.BROKEN_DRIVER)
+            return InternalResult(error=ThermalError.SENSORS_ERROR)
         except subprocess.TimeoutExpired:
             return InternalResult(error=ThermalError.TIMEOUT)
         except (json.decoder.JSONDecodeError, KeyError, IndexError):
             return InternalResult(error=ThermalError.PARSE_FAILED)
         except Exception:
             return InternalResult(error=ThermalError.UNKNOWN)
-        
+
     def get_thermal_snapshot(self) -> ThermalSnapshot:
         gpu_data = self._get_nvidia()
         sensor_data = self._get_sensors()
-        
+
         cpu_temp = None
         cpu_max = None
         system_fans = None
@@ -178,9 +201,9 @@ class LinuxThermalSampler:
         board_vendor = "Unknown"
         gpu_error = None
         sensor_error = None
-        
+
         # --- Handle GPU ---
-        gpus_list = []
+        gpus_list: list[GpuInfo] = []
         if gpu_data.data and "gpus" in gpu_data.data:
             gpus_list = gpu_data.data["gpus"]
             if not gpus_list:
@@ -192,7 +215,7 @@ class LinuxThermalSampler:
         if sensor_data.data:
             cpu_temp = sensor_data.data['cpu_temp']
             cpu_max = sensor_data.data['cpu_max']
-            
+
             # Safely convert fans to int if they exist
             if sensor_data.data['system_fans']:
                 system_fans = {}
@@ -200,22 +223,22 @@ class LinuxThermalSampler:
                     try:
                         system_fans[k] = int(float(v))
                     except (ValueError, TypeError):
-                        pass # Skip the fan if it's [N/A] or malformed
+                        pass  # Skip the fan if it's [N/A] or malformed
             if not system_fans:
                 system_fans = None
-            
+
             cpu_vendor = sensor_data.data.get('cpu_vendor', 'Unknown')
             board_vendor = sensor_data.data.get('board_vendor', 'Unknown')
         else:
             sensor_error = sensor_data.error.value if sensor_data.error else "Unknown Error"
-        
-        # The dataclass's __post_init__ will automatically map the legacy single-GPU 
+
+        # The dataclass's __post_init__ will automatically map the legacy single-GPU
         # properties (gpu_temp, gpu_fan, etc.) from the first item in this gpus list.
         return ThermalSnapshot(
             cpu_temp=cpu_temp,
             cpu_temp_max=cpu_max,
             system_fans=system_fans,
-            gpus=gpus_list, 
+            gpus=gpus_list,
             gpu_available=gpu_data.data is not None,
             sensor_available=sensor_data.data is not None,
             cpu_vendor=cpu_vendor,

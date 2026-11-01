@@ -24,10 +24,35 @@ def main():
     
     try:
         while True:
-            # Gather fresh snapshots
-            memory = data.get_memory_snapshot()
-            battery = data.get_battery_snapshot()
-            thermal = data.get_thermal_snapshot()  # Contains the updated .gpus multi-GPU array
+            # --- Gather fresh snapshots (each isolated) ---
+            try:
+                cpu = data.get_cpu_snapshot()
+                cpu_error = None
+            except Exception as e:
+                cpu = None
+                cpu_error = str(e)
+
+            try:
+                memory = data.get_memory_snapshot()
+                memory_error = None
+            except Exception as e:
+                memory = None
+                memory_error = str(e)
+
+            try:
+                battery = data.get_battery_snapshot()
+                battery_error = None
+            except Exception as e:
+                battery = None
+                battery_error = str(e)
+
+            try:
+                thermal = data.get_thermal_snapshot()
+                thermal_error = None
+            except Exception as e:
+                thermal = None
+                thermal_error = str(e)
+
             os.system(clear_command)
             
             print("====================================") 
@@ -46,19 +71,28 @@ def main():
                 print("------------------------------------")
                 
             # --- CPU & MEMORY BLOCKS ---
-            print(f"CPU Usage:                {data.get_cpu_snapshot().usage_pct}%") 
+            if cpu is None:
+                print(f"CPU Usage:                Unavailable ({cpu_error})")
+            else:
+                print(f"CPU Usage:                {cpu.usage_pct}%") 
             print("------------------------------------") 
-            print(f"Total Memory:             {round(memory.total_gb, 2)} GB") 
-            print(f"Used Memory:              {round(memory.used_gb, 2)} GB") 
-            print(f"Available Memory:         {round(memory.available_gb, 2)} GB") 
-            print(f"Memory Usage Percentage:  {round(memory.used_pct, 2)}%") 
+
+            if memory is None:
+                print(f"Memory:                   Unavailable ({memory_error})")
+            else:
+                print(f"Total Memory:             {round(memory.total_gb, 2)} GB") 
+                print(f"Used Memory:              {round(memory.used_gb, 2)} GB") 
+                print(f"Available Memory:         {round(memory.available_gb, 2)} GB") 
+                print(f"Memory Usage Percentage:  {round(memory.used_pct, 2)}%") 
             
             # --- BATTERY TELEMETRY BLOCK ---
             print("====================================")
             print("         BATTERY TELEMETRY          ")
             print("====================================")
             
-            if battery is None:
+            if battery_error is not None:
+                print(f"Battery:                  Unavailable ({battery_error})")
+            elif battery is None:
                 print("Battery:                  Not Detected (Desktop/Server)")
             else:
                 if battery.status == "Discharging" and battery.hours_left > 0:
@@ -91,47 +125,52 @@ def main():
             print("         THERMAL TELEMETRY          ")
             print("====================================")
 
-            if thermal.sensor_available:
-                print(f"CPU Vendor:               {thermal.cpu_vendor}")
-                print(f"Motherboard:              {thermal.board_vendor}")
-                
-                cpu_t = f"{thermal.cpu_temp}°C" if thermal.cpu_temp is not None else "N/A"
-                cpu_m = f"{thermal.cpu_temp_max}°C" if thermal.cpu_temp_max is not None else "N/A"
-                print(f"CPU Temp:                 {cpu_t} (Max: {cpu_m})")
-                
-                if thermal.system_fans:
-                    for fan, rpm in thermal.system_fans.items():
-                        print(f"{fan.capitalize()}:                  {rpm} RPM")
-                else:
-                    print("System Fans:              N/A")
+            if thermal is None:
+                print(f"Thermal:                  Unavailable ({thermal_error})")
             else:
-                print(f"Sensor Error:             {thermal.sensor_error}")
+                if thermal.sensor_available:
+                    print(f"CPU Vendor:               {thermal.cpu_vendor}")
+                    print(f"Motherboard:              {thermal.board_vendor}")
+                    
+                    cpu_t = f"{thermal.cpu_temp}°C" if thermal.cpu_temp is not None else "N/A"
+                    cpu_m = f"{thermal.cpu_temp_max}°C" if thermal.cpu_temp_max is not None else "N/A"
+                    print(f"CPU Temp:                 {cpu_t} (Max: {cpu_m})")
+                    
+                    if thermal.system_fans:
+                        for fan, rpm in thermal.system_fans.items():
+                            print(f"{fan.capitalize()}:                  {rpm} RPM")
+                    else:
+                        print("System Fans:              N/A")
+                else:
+                    print(f"Sensor Error:             {thermal.sensor_error}")
 
-            # --- UPDATED: MULTI-GPU RENDER ENGINE ---
-            if thermal.gpu_available:
-                if thermal.gpus:
-                    for gpu in thermal.gpus:
-                        # Extract metrics safely from dictionary maps
-                        g_name = gpu.get("name", "Unknown GPU")
-                        g_temp = gpu.get("temperature_c")
-                        g_util = gpu.get("utilization_pct")
-                        g_watt = gpu.get("power_w")
-                        g_fan  = gpu.get("fan_speed_pct")
-                        
-                        fan_str = f"{g_fan}%" if g_fan is not None else "N/A (EC Owned)"
-                        
-                        print(f"GPU [{gpu.get('index', 0)}]:                 {g_name}")
-                        print(f"  Temp / Util:            {g_temp}°C / {g_util}%")
-                        print(f"  Power Draw:             {g_watt} W")
-                        print(f"  Fan Speed:              {fan_str}")
+                # --- UPDATED: MULTI-GPU RENDER ENGINE (attribute access) ---
+                if thermal.gpu_available:
+                    if thermal.gpus:
+                        for gpu in thermal.gpus:
+                            g_name = gpu.name
+                            g_temp = gpu.temperature_c
+                            g_util = gpu.utilization_pct
+                            g_watt = gpu.power_w
+                            g_fan  = gpu.fan_speed_pct
+
+                            temp_str = f"{g_temp}°C" if g_temp is not None else "N/A"
+                            util_str = f"{g_util}%" if g_util is not None else "N/A"
+                            watt_str = f"{g_watt} W" if g_watt is not None else "N/A"
+                            fan_str  = f"{g_fan}%"  if g_fan  is not None else "N/A (EC Owned)"
+
+                            print(f"GPU [{gpu.index}]:                 {g_name}")
+                            print(f"  Temp / Util:            {temp_str} / {util_str}")
+                            print(f"  Power Draw:             {watt_str}")
+                            print(f"  Fan Speed:              {fan_str}")
+                    else:
+                        # Fallback UI layout using the __post_init__ auto-mapped parent attributes
+                        print(f"GPU Temp:                 {thermal.gpu_temp if thermal.gpu_temp is not None else 'N/A'}")
+                        print(f"GPU Fan:                  {thermal.gpu_fan if thermal.gpu_fan is not None else 'N/A'}")
+                        print(f"GPU Usage:                {thermal.gpu_usage if thermal.gpu_usage is not None else 'N/A'}")
+                        print(f"GPU Power:                {thermal.gpu_power_watts if thermal.gpu_power_watts is not None else 'N/A'}")
                 else:
-                    # Fallback UI layout using the __post_init__ auto-mapped parent attributes
-                    print(f"GPU Temp:                 {thermal.gpu_temp}°C")
-                    print(f"GPU Fan:                  {thermal.gpu_fan if thermal.gpu_fan is not None else 'N/A'}")
-                    print(f"GPU Usage:                {thermal.gpu_usage}%")
-                    print(f"GPU Power:                {thermal.gpu_power_watts} W")
-            else:
-                print(f"GPU Status:               {thermal.gpu_error}. Check If you are using ECO mode.")
+                    print(f"GPU Status:               {thermal.gpu_error}. Check If you are using ECO mode.")
                 
             print("====================================") 
             print("\nPress Ctrl+C to exit.")
