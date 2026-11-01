@@ -131,7 +131,7 @@ def main():
                     print(f"GPU Usage:                {thermal.gpu_usage}%")
                     print(f"GPU Power:                {thermal.gpu_power_watts} W")
             else:
-                print(f"GPU Status:               {thermal.gpu_error}")
+                print(f"GPU Status:               {thermal.gpu_error}. Check If you are using ECO mode.")
                 
             print("====================================") 
             print("\nPress Ctrl+C to exit.")
