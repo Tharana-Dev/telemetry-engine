@@ -73,4 +73,15 @@ class DiskSpaceSnapshot:
     used_gb: float
     free_gb: float
     percent: float            
-            
+
+@dataclass(frozen=True)
+class NetworkSnapshot:
+    interface: str
+    status: str
+    download_mbps: float
+    upload_mbps: float
+    rx_errors: int
+    tx_errors: int
+    rx_drops: int
+    tx_drops: int
+    total_gb: float

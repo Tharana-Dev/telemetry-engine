@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from engine.linux_disk import LinuxDisk
+from engine.linux_disk import LinuxDiskSampler
 from engine.models import DiskIOSnapshot, DiskSpaceSnapshot
 
 def test_disk_space_snapshot():
@@ -12,7 +12,7 @@ def test_disk_space_snapshot():
     fake_usage.percent = 40.0
 
     with patch("engine.linux_disk.psutil.disk_usage", return_value=fake_usage):
-        sampler = LinuxDisk()
+        sampler = LinuxDiskSampler()
         snapshot = sampler.get_space_snapshot()
 
         assert snapshot.total_gb == 1000.0
@@ -26,7 +26,7 @@ def test_disk_io_first_run_primes_baseline(tmp_path):
     # 8 = major, 0 = minor, sda = name, then 11 numbers (we need at least 14 fields total)
     fake_diskstats.write_text("8 0 sda 100 0 2000 0 100 0 4000 0 0 0 0\n")
 
-    sampler = LinuxDisk(diskstats_path=str(fake_diskstats))
+    sampler = LinuxDiskSampler(diskstats_path=str(fake_diskstats))
     snapshots = sampler.get_io_snapshot()
 
     # First run should return empty list because there is no delta yet
@@ -41,7 +41,7 @@ def test_disk_io_delta_math(mock_time, tmp_path):
     # Baseline at Time = 100.0
     fake_diskstats.write_text("8 0 sda 100 0 2048 0 100 0 4096 0 0 0 0\n")
     mock_time.return_value = 100.0
-    sampler = LinuxDisk(diskstats_path=str(fake_diskstats))
+    sampler = LinuxDiskSampler(diskstats_path=str(fake_diskstats))
     sampler.get_io_snapshot() # Primes baseline
 
     # Time = 101.0 (1 second later)
@@ -69,7 +69,7 @@ def test_disk_io_filters_partitions_and_virtual(tmp_path):
         "7 0 loop0 100 0 100 0 100 0 100 0 0 0 0\n"
     )
 
-    sampler = LinuxDisk(diskstats_path=str(fake_diskstats))
+    sampler = LinuxDiskSampler(diskstats_path=str(fake_diskstats))
     result = sampler._get_disk_stats()
 
     assert result.error is None

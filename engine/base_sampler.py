@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from engine.models import DiskSpaceSnapshot, DiskIOSnapshot, BatterySnapshot, CpuSnapshot, MemorySnapshot, ThermalSnapshot
+from engine.models import DiskSpaceSnapshot, DiskIOSnapshot, BatterySnapshot, CpuSnapshot, MemorySnapshot, ThermalSnapshot, NetworkSnapshot
 
 class BaseSystemCollector(ABC):
     @abstractmethod
@@ -24,4 +24,8 @@ class BaseSystemCollector(ABC):
     
     @abstractmethod
     def get_disk_space_snapshot(self) -> DiskSpaceSnapshot: 
+        ...
+    
+    @abstractmethod
+    def get_network_snapshot(self) -> list[NetworkSnapshot]: 
         ...

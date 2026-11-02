@@ -4,6 +4,8 @@ from engine.linux_cpu import LinuxCpuSampler
 from engine.linux_battery import LinuxBatterySampler
 from engine.linux_thermal import LinuxThermalSampler
 from engine.linux_disk import LinuxDiskSampler
+from engine.linux_network import LinuxNetworkSampler
+from engine.models import NetworkSnapshot
 
 class LinuxCollector(BaseSystemCollector):
     def __init__(self) -> None:
@@ -12,6 +14,7 @@ class LinuxCollector(BaseSystemCollector):
         self.battery_sampler = LinuxBatterySampler()
         self.thermal_sampler = LinuxThermalSampler()
         self.disk_sampler = LinuxDiskSampler()
+        self.network_sampler = LinuxNetworkSampler()
     
     def get_cpu_snapshot(self):
         return self.cpu_sampler.get_snapshot()
@@ -30,3 +33,6 @@ class LinuxCollector(BaseSystemCollector):
         
     def get_disk_space_snapshot(self):
         return self.disk_sampler.get_space_snapshot()
+    
+    def get_network_snapshot(self):
+        return self.network_sampler.get_network_snapshot()

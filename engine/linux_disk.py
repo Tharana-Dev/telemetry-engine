@@ -8,7 +8,7 @@ DEVICE_PATTERN = re.compile(
     r'^(?:sd[a-z]+|hd[a-z]+|vd[a-z]+|nvme\d+n\d+|mmcblk\d+)$'
 )
 
-class LinuxDisk:
+class LinuxDiskSampler:
     def __init__(self, diskstats_path: str = '/proc/diskstats') -> None:
         self.diskstats_path = diskstats_path
         self.root_path = '/'

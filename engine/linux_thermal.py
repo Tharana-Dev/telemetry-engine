@@ -2,8 +2,6 @@ from engine.models import ThermalSnapshot, GpuInfo
 import subprocess
 from dataclasses import dataclass
 import json
-from typing import Any
-from enum import Enum
 import pynvml
 from engine.results_and_errors import Errors, InternalResult
 

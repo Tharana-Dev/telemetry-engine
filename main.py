@@ -4,6 +4,26 @@ from engine.linux_sampler import LinuxCollector
 from engine.psutil_sampler import PsutilCollector
 import platform
 
+def format_speed_bits(bytes_per_second):
+    """Converts bytes/sec to bits/sec and formats as industry-standard Kbps or Mbps."""
+    bits_per_second = bytes_per_second * 8
+    kbps = bits_per_second / 1000  # Networking standard uses base-1000 for bits
+
+    if kbps < 1000:
+        return f"{kbps:.2f} Kbps"
+    else:
+        mbps = kbps / 1000
+        return f"{mbps:.2f} Mbps"
+
+def format_total_data(total_bytes):
+    """Converts total cumulative bytes into binary human-readable strings (KB, MB, GB)."""
+    for unit in ['Bytes', 'KB', 'MB', 'GB', 'TB']:
+        if total_bytes < 1024.0:
+            return f"{total_bytes:.2f} {unit}"
+        total_bytes /= 1024.0
+    return f"{total_bytes:.2f} PB"
+
+
 def main():
     sys_type = platform.system()
     fallback_active = False
@@ -66,6 +86,13 @@ def main():
             except Exception as e:
                 disk_space = None
                 disk_space_error = str(e)
+            
+            try:
+                network_data = data.get_network_snapshot()
+                network_error = None
+            except Exception as e:
+                network_data = None
+                network_error = str(e)
 
             os.system(clear_command)
             
@@ -209,6 +236,33 @@ def main():
                         print(f"{io.device}:")
                         print(f"  Read Speed:             {io.read_mbps} MB/s")
                         print(f"  Write Speed:            {io.write_mbps} MB/s")
+
+
+            print("====================================")
+            print("         NETWORK TELEMETRY          ")
+            print("====================================")
+
+            if network_error is not None:
+                print(f"Network Telemetry:        Unavailable ({network_error})")
+            elif network_data is not None:
+                if not network_data:
+                    print("Network Telemetry:        Initializing... (Requires 1s delta)")
+                else:
+                    for item in network_data:
+                        print(f"{item.interface}:")
+                        print(f"  Status:                 {item.status}")
+
+                        if item.status == "CONNECTED":
+                            print(f"  Download Speed:         {format_speed_bits(item.download_mbps)}")
+                            print(f"  Upload Speed:           {format_speed_bits(item.upload_mbps)}")
+                            print(f"  Rx Errors/Drops:        {item.rx_errors}/{item.rx_drops}")
+                            print(f"  Tx Errors/Drops:        {item.tx_errors}/{item.tx_drops}")
+                            print(f"  Total Transferred:      {format_total_data(item.total_gb)}")
+                        elif item.status == "CONNECTING":
+                            print("  Network Activity:       Initializing new interface link...")
+                            print(f"  Total Historical Data:  {format_total_data(item.total_gb)}")
+                        else:
+                            print("  Network Activity:       Offline / Unplugged")
                 
             print("====================================") 
             print("\nPress Ctrl+C to exit.")
