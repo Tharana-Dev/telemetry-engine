@@ -7,12 +7,13 @@ A high-performance, cross-platform system telemetry engine written in Python. It
 ## 🔥 Key Features
 
 - **Cross-Platform Hardware Abstraction Layer (HAL):** Built on an Abstract Base Class (ABC) contract. The UI doesn't know or care if the data is coming from Linux kernel files, C-bindings, or Windows C-APIs; it just asks for the metrics.
-- **Linux Kernel-Direct Hooking:** Reads natively from `/proc/stat`, `/proc/meminfo`, `/proc/diskstats`, `/proc/net/dev`, and `/sys/class/power_supply/` to capture bare-metal statistics.
-- **Network Telemetry:** Calculates real-time upload and download speeds (Mbps) by tracking byte deltas in `/proc/net/dev`. Safely handles interface hot-plugging, disconnections, and kernel counter resets. Filters out virtual interfaces (like `lo` and `docker0`).
-- **Disk I/O & Capacity:** Calculates real-time read/write speeds (MB/s) by tracking sector deltas in `/proc/diskstats`, filtering out virtual drives (`loop0`) and partitions. Uses `psutil` for accurate root partition capacity.
+- **Side-by-Side Terminal Dashboard:** A custom TUI (Text User Interface) that dynamically renders two columns (System/Hardware & I/O/Network) using Unicode box-drawing characters and terminal-width-aware text wrapping.
+- **Linux Kernel-Direct Hooking:** Reads natively from `/proc/stat`, `/proc/meminfo`, `/proc/diskstats`, `/proc/net/dev`, and `/sys/class/power_supply/`.
+- **Network Telemetry:** Calculates real-time upload and download speeds (bps) by tracking byte deltas in `/proc/net/dev`. Safely handles interface hot-plugging, disconnections, and kernel counter resets. Filters out virtual interfaces.
+- **Disk I/O & Capacity:** Calculates real-time read/write speeds (MiB/s) by tracking sector deltas in `/proc/diskstats`, filtering out virtual drives and partitions. Uses `shutil.disk_usage` for accurate root partition capacity.
 - **Direct GPU Telemetry via NVML:** Drops fragile CLI parsing in favor of NVIDIA's official C-bindings. Supports multi-GPU setups, queries temperature, utilization, and power draw, and handles laptop EC fan restrictions.
 - **The Result Pattern (Fault Tolerance):** Hardware queries are wrapped in an `InternalResult` dataclass. If a driver crashes or a tool is missing, the engine returns a specific error enum instead of crashing.
-- **Resilient Battery Diagnostics:** Calculates real-time power draw (Watts), time remaining, and hardware degradation (Health %), with fallbacks for both `energy_*` and `charge_*` sysfs paths.
+- **Resilient Battery Diagnostics:** Calculates real-time power draw (Watts), time remaining, and hardware degradation (Health %), with fallbacks for both `energy_*` and `charge_*` sysfs paths. Handles USB-C chargers (`ucsi`) and unreadable AC files.
 
 ---
 
@@ -42,10 +43,12 @@ telemetry-engine/
 │   ├── test_linux_disk.py
 │   ├── test_linux_network.py
 │   └── test_psutil.py
-├── main.py                # Main executable orchestrator
+├── main.py                # Main executable orchestrator (CLI Dashboard)
 ├── README.md              
 └── requirements.txt       
 ```
+
+---
 
 ## 🚀 Getting Started
 
@@ -73,71 +76,50 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-*(Note: Ensure your `requirements.txt` includes `psutil`, `nvidia-ml-py`, `pytest`, and `PySide6`).*
-
 ---
 
 ## 🖥️ Running the Application
 
-Launch the live telemetry dashboard stream directly from the console interface:
+Launch the live telemetry dashboard directly from the console interface:
 
 ```bash
 python3 main.py
 ```
 
-
----
-
-## 🖥️ Expected Output Terminal UI
+### Expected Output Terminal UI
 
 ```text
-====================================
-      SYSTEM TELEMETRY ENGINE
-====================================
-[*] ENGINE MODE: High-Performance Linux Native (/proc)
-------------------------------------
-CPU Usage:                4.51%
-------------------------------------
-Total Memory:             7.42 GB
-Used Memory:              2.97 GB
-Available Memory:         4.45 GB
-Memory Usage Percentage:  40.04%
-====================================
-         BATTERY TELEMETRY
-====================================
-Status:                   Not charging
-Capacity:                 80%
-Battery Health:           100.0%
-====================================
-         THERMAL TELEMETRY
-====================================
-CPU Temp:                 N/A (Max: N/A)
-GPU [0]:                  NVIDIA GeForce RTX 4050 Laptop GPU
-  Temp / Util:            49°C / 0%
-  Power Draw:             14.26 W
-====================================
-          DISK TELEMETRY
-====================================
-Total Space:              1006.85 GB
-Used Space:               5.6 GB
-Free Space:               950.04 GB
-------------------------------------
-sdd:
-  Read Speed:             492.53 MB/s
-  Write Speed:            108.46 MB/s
-====================================
-         NETWORK TELEMETRY
-====================================
-eth0:
-  Status:                 CONNECTED
-  Download Speed:         14.66 Mbps
-  Upload Speed:           1.25 Mbps
-  Rx Errors/Drops:        0/0
-  Tx Errors/Drops:        0/5
-  Total Transferred:      1.57 GB
-====================================
-
-Press Ctrl+C to exit.
+╔══════════════════════════════════════════════════════════════════════════════════════════╤═══════════════════════════════════════════════════════════════════════════════════════════╗
+║ SYSTEM & HARDWARE                                                                        │ I/O & NETWORK                                                                             ║
+║ ─────────────────────────────                                                            │ ─────────────────────────────                                                             ║
+║ Engine Mode:  Linux Native (/proc)                                                       │                                                                                           ║
+║                                                                                          │ DISK SPACE                                                                                ║
+║ CPU & MEMORY                                                                             │   Total:      1006.85 GB                                                                  ║
+║   CPU Usage:  1.29%                                                                      │   Used:       5.2 GB  (0.5%)                                                              ║
+║   Memory:     47.81% (3.55 GB / 7.42 GB)                                                 │   Free:       950.43 GB                                                                   ║
+║                                                                                          │                                                                                           ║
+║ BATTERY                                                                                  │ DISK I/O                                                                                  ║
+║   Status:     Not charging                                                               │   sdb:                                                                                    ║
+║   Capacity:   80%  (Health: 100.0%)                                                      │     Read:  0.0 MiB/s                                                                      ║
+║   Power:      N/A                                                                        │     Write: 0.0 MiB/s                                                                      ║
+║   Time Est:   Wall Power (AC)                                                            │   sda:                                                                                    ║
+║                                                                                          │     Read:  0.0 MiB/s                                                                      ║
+║ THERMAL & GPU                                                                            │     Write: 0.0 MiB/s                                                                      ║
+║   CPU Temp:   N/A (Max: N/A)                                                             │   sdc:                                                                                    ║
+║   GPU:        Unavailable (ECO/Driver)                                                   │     Read:  0.0 MiB/s                                                                      ║
+║                                                                                          │     Write: 0.0 MiB/s                                                                      ║
+║                                                                                          │   sdd:                                                                                    ║
+║                                                                                          │     Read:  0.0 MiB/s                                                                      ║
+║                                                                                          │     Write: 0.0 MiB/s                                                                      ║
+║                                                                                          │                                                                                           ║
+║                                                                                          │ NETWORK                                                                                   ║
+║                                                                                          │   eth0 (CONNECTED)                                                                        ║
+║                                                                                          │     ↓ 0.00 Kbps | ↑ 0.00 Kbps                                                             ║
+║                                                                                          │     Total Rx Err/Drop: 0 / 0                                                              ║
+║                                                                                          │     Total Tx Err/Drop: 0 / 0                                                              ║
+║                                                                                          │     Total Data:  1.08 MB                                                                  ║
+║                                                                                          │                                                                                           ║
+╚══════════════════════════════════════════════════════════════════════════════════════════╧═══════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ---
@@ -150,12 +132,12 @@ The suite isolates production code behavior by injecting dynamically generated t
 pytest -v
 ```
 
-### Coverage Blueprint (33 Passing Tests)
+### Coverage Blueprint (118 Passing Tests)
 
 - **Mathematical Accuracy:** Verifies unit conversion paths and CPU/Disk/Network time delta operations.
 - **Hardware Mocking:** Simulates `lm-sensors`, `pynvml`, `/proc/diskstats`, and `/proc/net/dev` across various hardware profiles.
-- **Robustness Checks:** Forces edge situations including blank tracking paths, zero core totals, desktop battery fallbacks, bad integer parsing, and partition filtering.
-- **Fault Tolerance:** Verifies that missing tools, malformed data, and hot-unplugged interfaces return specific error states rather than crashing.
+- **Robustness Checks:** Forces edge situations including blank tracking paths, zero core totals, desktop battery fallbacks, bad integer parsing, partition filtering, and negative delta clamping.
+- **Fault Tolerance:** Verifies that missing tools, malformed data, permission errors, and hot-unplugged interfaces return specific error states rather than crashing.
 
 ---
 
