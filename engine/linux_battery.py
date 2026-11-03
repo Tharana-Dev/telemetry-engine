@@ -23,19 +23,32 @@ class LinuxBatterySampler:
         # rather than AC*, and some machines expose more than one battery.
         bat_folders: list[str] = []
         ac_folders: list[str] = []
+        
         for name in entries:
             folder = os.path.join(self.main_path, name)
             if not os.path.isdir(folder):
                 continue
+                
             type_val = self._read_val("type", base_path=folder)
+            
             if type_val == "Battery":
+                # Wireless mouse / keyboard trap: these expose a Battery
+                # folder with scope='Device'. Skip them so the laptop's
+                # real battery is not shadowed by a peripheral.
+                if self._is_peripheral(folder):
+                    continue
                 bat_folders.append(name)
             elif type_val == "Mains":
                 ac_folders.append(name)
 
         # Fall back to name matching if the type files were missing.
         if not bat_folders:
-            bat_folders = [f for f in entries if "BAT" in f]
+            bat_folders = [
+                f for f in entries
+                if "BAT" in f
+                and not self._is_peripheral(os.path.join(self.main_path, f))
+            ]
+            
         if not ac_folders:
             ac_folders = [
                 f for f in entries
@@ -44,6 +57,14 @@ class LinuxBatterySampler:
 
         self.battery_path = os.path.join(self.main_path, bat_folders[0]) if bat_folders else None
         self.ac_path = os.path.join(self.main_path, ac_folders[0]) if ac_folders else None
+
+    def _is_peripheral(self, folder: str) -> bool:
+        """True for device-scoped batteries (wireless mice, keyboards, controllers).
+        
+        System batteries have scope='System' or no scope file at all (older kernels).
+        Peripherals always set scope='Device'.
+        """
+        return self._read_val("scope", base_path=folder) == "Device"
 
     def get_battery_snapshot(self) -> BatterySnapshot | None:
         # No battery at all — nothing to report. (Desktops, some VMs.)
@@ -143,7 +164,8 @@ class LinuxBatterySampler:
 
     def _read_val(self, filename: str, base_path: str | None = None) -> str | None:
         # Default base is the battery folder. Callers can pass an override
-        # to read from the AC folder (for the "online" file).
+        # to read from the AC folder (for the "online" file) or arbitrary
+        # folders (for the "type" and "scope" checks in __init__).
         path = base_path if base_path is not None else self.battery_path
         if path is None:
             return None

@@ -63,6 +63,19 @@ def print_side_by_side(left_lines, right_lines):
     print(f"╚{'═' * (left_width + 2)}╧{'═' * (right_width + 2)}╝")
 
 
+def _sampler_state(data, kind: str):
+    """Read (is_ready, has_known_devices, last_error) from the sampler.
+
+    Falls back to (True, True, None) so this works transparently with
+    PsutilCollector (which has no raw samplers) or older sampler versions
+    that don't yet expose the state properties.
+    """
+    sampler = getattr(data, f"{kind}_sampler", None)
+    if sampler is None or not hasattr(sampler, "is_ready"):
+        return (True, True, None)
+    return (sampler.is_ready, sampler.has_known_devices, sampler.last_error)
+
+
 def main():
     sys_type = platform.system()
     fallback_active = False
@@ -73,19 +86,10 @@ def main():
         try:
             data = LinuxCollector()
         except Exception as e:
-            # K1: LinuxCollector now catches per-sampler failures internally
-            # (battery sysfs, /proc/meminfo, etc.), so reaching this branch
-            # means a *global* failure — e.g. ctypes can't load pynvml, an
-            # engine module failed to import, etc. In that case the whole
-            # native stack is untrustworthy and psutil fallback is correct.
             data = PsutilCollector()
             fallback_active = True
             fallback_reason = type(e).__name__
         else:
-            # K1: partial failure is "degraded", not "fallback". The Linux
-            # collector is still serving most metrics natively; only some
-            # subsystems are missing. Surface which ones so the banner is
-            # honest about it.
             if hasattr(data, "sampler_status"):
                 degraded_subsystems = [
                     name for name, err in data.sampler_status().items()
@@ -95,10 +99,9 @@ def main():
         data = PsutilCollector()
 
     clear_command = 'cls' if sys_type == "Windows" else 'clear'
-    empty_network_ticks = 0 
+
     try:
         while True:
-            # --- Gather fresh snapshots ---
             try: cpu, cpu_error = data.get_cpu_snapshot(), None
             except Exception as e: cpu, cpu_error = None, str(e)
 
@@ -207,7 +210,8 @@ def main():
                     else:
                         left_col.append("  GPU:        N/A")
                 else:
-                    left_col.append("  GPU:        Unavailable (ECO/Driver)")
+                    err = thermal.gpu_error or "Unavailable"
+                    left_col.append(f"  GPU:        {err}")
 
             # ==========================================
             # RIGHT COLUMN (I/O & Network)
@@ -219,7 +223,7 @@ def main():
             # Disk Space
             right_col.append("DISK SPACE")
             if disk_space_error is not None:
-                right_col.append("  Status:     Unavailable")
+                right_col.append(f"  Status:     Unavailable — {disk_space_error}")
             elif disk_space is not None:
                 right_col.append(f"  Total:      {disk_space.total_gb} GB")
                 right_col.append(f"  Used:       {disk_space.used_gb} GB  ({disk_space.percent}%)")
@@ -229,10 +233,17 @@ def main():
             # Disk I/O
             right_col.append("DISK I/O")
             if disk_io_error is not None:
-                right_col.append("  Status:     Unavailable")
+                right_col.append(f"  Status:     Unavailable — {disk_io_error}")
             elif disk_io is not None:
-                if not disk_io:
+                is_ready, has_devices, last_err = _sampler_state(data, "disk")
+                if last_err is not None:
+                    right_col.append(f"  Status:     Unavailable ({last_err.value})")
+                elif not is_ready:
                     right_col.append("  Status:     Initializing (1s delta)")
+                elif not has_devices:
+                    right_col.append("  Status:     No physical devices detected")
+                elif not disk_io:
+                    right_col.append("  Status:     Idle")
                 else:
                     for io in disk_io:
                         right_col.append(f"  {io.device}:")
@@ -243,16 +254,18 @@ def main():
             # Network
             right_col.append("NETWORK")
             if network_error is not None:
-                right_col.append("  Status:     Unavailable")
+                right_col.append(f"  Status:     Unavailable — {network_error}")
             elif network_data is not None:
-                if not network_data:
-                    empty_network_ticks += 1
-                    if empty_network_ticks > 2:
-                        right_col.append("  Status:     No interfaces detected")
-                    else:
-                        right_col.append("  Status:     Initializing (1s delta)")
+                is_ready, has_devices, last_err = _sampler_state(data, "network")
+                if last_err is not None:
+                    right_col.append(f"  Status:     Unavailable ({last_err.value})")
+                elif not is_ready:
+                    right_col.append("  Status:     Initializing (1s delta)")
+                elif not has_devices:
+                    right_col.append("  Status:     No interfaces detected")
+                elif not network_data:
+                    right_col.append("  Status:     Idle")
                 else:
-                    empty_network_ticks = 0  # Reset timer when data comes in
                     for item in network_data:
                         right_col.append(f"  {item.interface} ({item.status})")
                         if item.status == "CONNECTED":
@@ -264,7 +277,7 @@ def main():
                             right_col.append(f"    Total Data:  {format_total_data(item.total_bytes)}")
                         elif item.status == "CONNECTING":
                             right_col.append("    Initializing link...")
-                            right_col.append(f"    Total Data:  {format_total_data(item.total_gb)}")
+                            right_col.append(f"    Total Data:  {format_total_data(item.total_bytes)}")
                         else:
                             right_col.append("    Offline / Unplugged")
                         right_col.append("")

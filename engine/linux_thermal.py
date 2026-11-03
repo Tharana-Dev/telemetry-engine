@@ -94,30 +94,30 @@ class LinuxThermalSampler:
                     name = pynvml.nvmlDeviceGetName(handle)
                     if isinstance(name, bytes):
                         name = name.decode("utf-8")
-
                     try:
                         temp = pynvml.nvmlDeviceGetTemperature(
                             handle, pynvml.NVML_TEMPERATURE_GPU
                         )
-                    except _NotSupported:
+                    except pynvml.NVMLError:
                         temp = None
 
                     try:
                         usage = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
-                    except _NotSupported:
+                    except pynvml.NVMLError:
                         usage = None
 
                     # Power is returned in milliwatts. Convert to Watts.
                     try:
                         power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
                         power_watts = round(power_mw / 1000, 2)
-                    except _NotSupported:
+                    except pynvml.NVMLError:
                         power_watts = None
 
                     try:
                         fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
-                    except _NotSupported:
-                        # EC owns the fan (common on laptops)
+                    except pynvml.NVMLError:
+                        # EC owns the fan (common on laptops), or a transient
+                        # driver error — either way, "not available" is honest.
                         fan_speed = None
 
                     gpu_records.append(GpuInfo(

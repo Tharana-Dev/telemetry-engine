@@ -185,3 +185,28 @@ def test_get_io_snapshot_returns_empty_on_error(tmp_path):
 
     assert sampler.get_io_snapshot() == []
     assert sampler._last_stats is None
+
+def test_state_after_first_tick_with_devices(tmp_path):
+    f = tmp_path / "diskstats"
+    f.write_text("8 0 sda 0 0 0 0 0 0 0 0 0 0 0\n")
+    sampler = LinuxDiskSampler(diskstats_path=str(f))
+    sampler.get_io_snapshot()
+    assert sampler.is_primed
+    assert sampler.has_known_devices
+    assert sampler.last_error is None
+
+def test_state_no_devices_after_tick(tmp_path):
+    f = tmp_path / "diskstats"
+    f.write_text("")  # file exists, no lines
+    sampler = LinuxDiskSampler(diskstats_path=str(f))
+    assert sampler.get_io_snapshot() == []
+    assert sampler.is_primed          # we ticked
+    assert not sampler.has_known_devices  # no devices ever
+    assert sampler.last_error is None
+
+def test_state_broken_file(tmp_path):
+    sampler = LinuxDiskSampler(diskstats_path=str(tmp_path / "nope"))
+    assert sampler.get_io_snapshot() == []
+    assert sampler.last_error == Errors.FILE_NOT_FOUND
+    assert not sampler.is_primed      # never ticked successfully
+    
