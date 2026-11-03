@@ -34,7 +34,7 @@ def test_disk_io_first_run_primes_baseline(tmp_path):
     assert sampler._last_stats is not None
 
 
-@patch("engine.linux_disk.time.time")
+@patch("engine.linux_disk.time.monotonic")
 def test_disk_io_delta_math(mock_time, tmp_path):
     fake_diskstats = tmp_path / "diskstats"
     

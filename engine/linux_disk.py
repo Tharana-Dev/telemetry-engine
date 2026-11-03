@@ -43,7 +43,7 @@ class LinuxDiskSampler:
             return InternalResult(error=Errors.UNKNOWN)
         
     def get_io_snapshot(self) -> list[DiskIOSnapshot]:
-        current_time = time.time()
+        current_time = time.monotonic()
         result = self._get_disk_stats()
         
         # If we failed to read, return empty
@@ -67,8 +67,8 @@ class LinuxDiskSampler:
             if dev in self._last_stats:
                 data1 = self._last_stats[dev]
                 
-                read_delta = data2["read"] - data1["read"]
-                write_delta = data2["write"] - data1["write"]
+                read_delta = max(0, data2["read"] - data1["read"])
+                write_delta = max(0, data2["write"] - data1["write"])
                 
                 read_mb_s = (read_delta * 512) / (1024 * 1024) / duration
                 write_mb_s = (write_delta * 512) / (1024 * 1024) / duration
@@ -85,11 +85,14 @@ class LinuxDiskSampler:
         
         return snapshots
 
-    def get_space_snapshot(self) -> DiskSpaceSnapshot:
-        usage = psutil.disk_usage(self.root_path)
-        return DiskSpaceSnapshot(
-            total_gb=round(usage.total / (1024**3), 2),
-            used_gb=round(usage.used / (1024**3), 2),
-            free_gb=round(usage.free / (1024**3), 2),
-            percent=round(usage.percent, 1)
-        )
+    def get_space_snapshot(self) -> DiskSpaceSnapshot: 
+        try: 
+            usage = psutil.disk_usage(self.root_path) 
+            return DiskSpaceSnapshot( 
+                total_gb=round(usage.total / (1024**3), 2), 
+                used_gb=round(usage.used / (1024**3), 2), 
+                free_gb=round(usage.free / (1024**3), 2), 
+                percent=round(usage.percent, 1) 
+            ) 
+        except Exception: 
+            return DiskSpaceSnapshot(total_gb=0.0, used_gb=0.0, free_gb=0.0, percent=0.0)

@@ -78,10 +78,10 @@ class DiskSpaceSnapshot:
 class NetworkSnapshot:
     interface: str
     status: str
-    download_mbps: float
-    upload_mbps: float
+    download_bps: float
+    upload_bps: float
     rx_errors: int
     tx_errors: int
     rx_drops: int
     tx_drops: int
-    total_gb: float
+    total_bytes: float

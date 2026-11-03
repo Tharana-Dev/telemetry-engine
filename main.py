@@ -253,11 +253,11 @@ def main():
                         print(f"  Status:                 {item.status}")
 
                         if item.status == "CONNECTED":
-                            print(f"  Download Speed:         {format_speed_bits(item.download_mbps)}")
-                            print(f"  Upload Speed:           {format_speed_bits(item.upload_mbps)}")
+                            print(f"  Download Speed:         {format_speed_bits(item.download_bps)}")
+                            print(f"  Upload Speed:           {format_speed_bits(item.upload_bps)}")
                             print(f"  Rx Errors/Drops:        {item.rx_errors}/{item.rx_drops}")
                             print(f"  Tx Errors/Drops:        {item.tx_errors}/{item.tx_drops}")
-                            print(f"  Total Transferred:      {format_total_data(item.total_gb)}")
+                            print(f"  Total Transferred:      {format_total_data(item.total_bytes)}")
                         elif item.status == "CONNECTING":
                             print("  Network Activity:       Initializing new interface link...")
                             print(f"  Total Historical Data:  {format_total_data(item.total_gb)}")

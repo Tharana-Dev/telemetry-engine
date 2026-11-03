@@ -66,15 +66,17 @@ def test_parsing_and_delta_math(tmp_path, monkeypatch):
     assert eth0.interface == "eth0"
     assert eth0.status == "CONNECTED"
 
-    # (1012500 - 1000000)/1.25 = 10,000 B/s → 80,000 bits/s → 80.00 Kbps
-    assert eth0.download_mbps == "80.00 Kbps"
-    # (2005000 - 2000000)/1.25 =  4,000 B/s → 32,000 bits/s → 32.00 Kbps
-    assert eth0.upload_mbps == "32.00 Kbps"
+    # (1012500 - 1000000)/1.25 = 10,000 B/s 
+    assert eth0.download_bps == 10000
+    # (2005000 - 2000000)/1.25 =  4,000 B/s 
+    assert eth0.upload_bps == 4000
 
-    assert eth0.rx_errors == "2/1"             # errs/drop
-    assert eth0.tx_errors == "4/2"
-    # 1012500 + 2005000 = 3,017,500 B → "2.88 MB"
-    assert eth0.total_gb == "2.88 MB"
+    assert eth0.rx_errors == 2 # errs
+    assert eth0.rx_drops == 1       #/drop
+    assert eth0.tx_errors == 4
+    assert eth0.tx_drops == 2
+    # 1012500 + 2005000 = 3,017,500 B
+    assert eth0.total_bytes == 3017500
 
 
 def test_interface_disconnect(tmp_path, monkeypatch):
@@ -103,11 +105,11 @@ def test_interface_disconnect(tmp_path, monkeypatch):
     assert by_iface["eth0"].status == "CONNECTED"
     wlan = by_iface["wlan0"]
     assert wlan.status == "DISCONNECTED"
-    assert wlan.download_mbps == "0.00 Kbps"
-    assert wlan.upload_mbps == "0.00 kbps"     # note lowercase 'k' in impl
-    assert wlan.rx_errors == "0/0"
-    assert wlan.tx_errors == "0/0"
-    assert wlan.total_gb == "0.00 Bytes"
+    assert wlan.download_bps == 0.00
+    assert wlan.upload_bps == 0.00     # note lowercase 'k' in impl
+    assert wlan.rx_errors == 0
+    assert wlan.tx_errors == 0
+    assert wlan.total_bytes == 0.00
 
 
 def test_counter_reset_edge_case(tmp_path, monkeypatch):
@@ -128,8 +130,8 @@ def test_counter_reset_edge_case(tmp_path, monkeypatch):
     assert len(results) == 1
     eth0 = results[0]
     assert eth0.status == "CONNECTED"
-    assert eth0.download_mbps == "0.00 Kbps"
-    assert eth0.upload_mbps == "0.00 Kbps"
+    assert eth0.download_bps == 0.00 
+    assert eth0.upload_bps == 0.00
 
 
 def test_hotplug_edge_case(tmp_path, monkeypatch):
@@ -159,7 +161,7 @@ def test_hotplug_edge_case(tmp_path, monkeypatch):
     by_iface = {r.interface: r for r in results}
     enx = by_iface["enx001122334455"]
 
-    assert enx.status == "DISCONNECTED"        # mirrors current impl
-    assert enx.download_mbps == "0.00 Kbps"
-    assert enx.upload_mbps == "0.00 kbps"
-    assert enx.total_gb == "2.93 KB"           # (2000 + 1000) bytes
+    assert enx.status == "CONNECTING"       # mirrors current impl
+    assert enx.download_bps == 0.00
+    assert enx.upload_bps == 0.00
+    assert enx.total_bytes == 3000         # (2000 + 1000) bytes

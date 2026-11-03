@@ -30,15 +30,18 @@ class LinuxNetworkSampler:
                         interface = interface.strip()
 
                         if VALID_PREFIX.match(interface):
-                            metrics = data.split()
-                            interfaces[interface] = {
-                                "rx_bytes": int(metrics[0]),
-                                "rx_errs":  int(metrics[2]),
-                                "rx_drop":  int(metrics[3]),
-                                "tx_bytes": int(metrics[8]),
-                                "tx_errs":  int(metrics[10]),
-                                "tx_drop":  int(metrics[11])
-                            }
+                            try:
+                                metrics = data.split()
+                                interfaces[interface] = {
+                                    "rx_bytes": int(metrics[0]),
+                                    "rx_errs":  int(metrics[2]),
+                                    "rx_drop":  int(metrics[3]),
+                                    "tx_bytes": int(metrics[8]),
+                                    "tx_errs":  int(metrics[10]),
+                                    "tx_drop":  int(metrics[11])
+                                }
+                            except (IndexError, ValueError):
+                                continue
 
             return InternalResult(data=interfaces)
 
@@ -69,14 +72,14 @@ class LinuxNetworkSampler:
             if interface not in current_stats:
                 snapshots.append(NetworkSnapshot(
                     interface= interface,
-                    status= "CONNECTING",
-                    download_mbps= 0.00,
-                    upload_mbps= 0.00,
+                    status= "DISCONNECTED",
+                    download_bps= 0.00,
+                    upload_bps= 0.00,
                     rx_errors= 0,
                     tx_errors= 0,
                     rx_drops= 0,
                     tx_drops= 0,
-                    total_gb=0.00
+                    total_bytes=0.00
                 ))
                 
                 continue
@@ -92,14 +95,14 @@ class LinuxNetworkSampler:
                     
                 snapshots.append(NetworkSnapshot(
                     interface= interface,
-                    status= "DISCONNECTED",
-                    download_mbps= 0.00,
-                    upload_mbps= 0.00,
+                    status= "CONNECTING",
+                    download_bps= 0.00,
+                    upload_bps= 0.00,
                     rx_errors= 0,
                     tx_errors= 0,
                     rx_drops= 0,
                     tx_drops= 0,
-                    total_gb=total_bytes
+                    total_bytes=total_bytes
                 ))
                 
                 continue
@@ -124,13 +127,13 @@ class LinuxNetworkSampler:
                 snapshots.append(NetworkSnapshot(
                     interface= interface,
                     status= "CONNECTED",
-                    download_mbps= rx_bps,
-                    upload_mbps= tx_bps,
+                    download_bps= rx_bps,
+                    upload_bps= tx_bps,
                     rx_errors= rx_issue,
                     tx_errors= tx_issue,
                     rx_drops= rx_drop,
                     tx_drops= tx_drop,
-                    total_gb=total_bytes
+                    total_bytes=total_bytes
                 ))
         
         self._last_stats = current_stats
