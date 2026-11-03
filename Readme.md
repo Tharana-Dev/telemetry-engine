@@ -10,11 +10,10 @@ A high-performance, cross-platform system telemetry engine written in Python. It
 - **Side-by-Side Terminal Dashboard:** A custom TUI (Text User Interface) that dynamically renders two columns (System/Hardware & I/O/Network) using Unicode box-drawing characters and terminal-width-aware text wrapping.
 - **Linux Kernel-Direct Hooking:** Reads natively from `/proc/stat`, `/proc/meminfo`, `/proc/diskstats`, `/proc/net/dev`, and `/sys/class/power_supply/`.
 - **Network Telemetry:** Calculates real-time upload and download speeds (bps) by tracking byte deltas in `/proc/net/dev`. Safely handles interface hot-plugging, disconnections, and kernel counter resets. Filters out virtual interfaces.
-- **Disk I/O & Capacity:** Calculates real-time read/write speeds (MiB/s) by tracking sector deltas in `/proc/diskstats`, filtering out virtual drives and partitions. Uses `shutil.disk_usage` for accurate root partition capacity.
 - **Direct GPU Telemetry via NVML:** Drops fragile CLI parsing in favor of NVIDIA's official C-bindings. Supports multi-GPU setups, queries temperature, utilization, and power draw, and handles laptop EC fan restrictions.
 - **The Result Pattern (Fault Tolerance):** Hardware queries are wrapped in an `InternalResult` dataclass. If a driver crashes or a tool is missing, the engine returns a specific error enum instead of crashing.
 - **Resilient Battery Diagnostics:** Calculates real-time power draw (Watts), time remaining, and hardware degradation (Health %), with fallbacks for both `energy_*` and `charge_*` sysfs paths. Handles USB-C chargers (`ucsi`) and unreadable AC files.
-
+- **Disk I/O & Capacity:** Calculates real-time read/write speeds by tracking sector deltas in `/proc/diskstats`, filtering out virtual drives (`loop0`) and partitions. Uses `shutil` for accurate root partition capacity. Returns raw bytes to allow the UI to format into KB/s or MB/s dynamically.
 ---
 
 ## 🏗️ Project Layout
@@ -86,42 +85,32 @@ Launch the live telemetry dashboard directly from the console interface:
 python3 main.py
 ```
 
-### Expected Output Terminal UI
+## 🖥️ Expected Output Terminal UI
 
 ```text
-╔══════════════════════════════════════════════════════════════════════════════════════════╤═══════════════════════════════════════════════════════════════════════════════════════════╗
-║ SYSTEM & HARDWARE                                                                        │ I/O & NETWORK                                                                             ║
-║ ─────────────────────────────                                                            │ ─────────────────────────────                                                             ║
-║ Engine Mode:  Linux Native (/proc)                                                       │                                                                                           ║
-║                                                                                          │ DISK SPACE                                                                                ║
-║ CPU & MEMORY                                                                             │   Total:      1006.85 GB                                                                  ║
-║   CPU Usage:  1.29%                                                                      │   Used:       5.2 GB  (0.5%)                                                              ║
-║   Memory:     47.81% (3.55 GB / 7.42 GB)                                                 │   Free:       950.43 GB                                                                   ║
-║                                                                                          │                                                                                           ║
-║ BATTERY                                                                                  │ DISK I/O                                                                                  ║
-║   Status:     Not charging                                                               │   sdb:                                                                                    ║
-║   Capacity:   80%  (Health: 100.0%)                                                      │     Read:  0.0 MiB/s                                                                      ║
-║   Power:      N/A                                                                        │     Write: 0.0 MiB/s                                                                      ║
-║   Time Est:   Wall Power (AC)                                                            │   sda:                                                                                    ║
-║                                                                                          │     Read:  0.0 MiB/s                                                                      ║
-║ THERMAL & GPU                                                                            │     Write: 0.0 MiB/s                                                                      ║
-║   CPU Temp:   N/A (Max: N/A)                                                             │   sdc:                                                                                    ║
-║   GPU:        Unavailable (ECO/Driver)                                                   │     Read:  0.0 MiB/s                                                                      ║
-║                                                                                          │     Write: 0.0 MiB/s                                                                      ║
-║                                                                                          │   sdd:                                                                                    ║
-║                                                                                          │     Read:  0.0 MiB/s                                                                      ║
-║                                                                                          │     Write: 0.0 MiB/s                                                                      ║
-║                                                                                          │                                                                                           ║
-║                                                                                          │ NETWORK                                                                                   ║
-║                                                                                          │   eth0 (CONNECTED)                                                                        ║
-║                                                                                          │     ↓ 0.00 Kbps | ↑ 0.00 Kbps                                                             ║
-║                                                                                          │     Total Rx Err/Drop: 0 / 0                                                              ║
-║                                                                                          │     Total Tx Err/Drop: 0 / 0                                                              ║
-║                                                                                          │     Total Data:  1.08 MB                                                                  ║
-║                                                                                          │                                                                                           ║
-╚══════════════════════════════════════════════════════════════════════════════════════════╧═══════════════════════════════════════════════════════════════════════════════════════════╝
-```
+╔══════════════════════════════════════════════════════════════════╤══════════════════════════════════════════════════════════════════╗
+║ SYSTEM & HARDWARE                                                │ I/O & NETWORK                                                    ║
+║ ─────────────────────────────                                    │ ─────────────────────────────                                    ║
+║ Engine Mode:  Linux Native (/proc)                               │                                                                  ║
+║                                                                  │ DISK SPACE                                                       ║
+║ CPU & MEMORY                                                     │   Total:      1006.85 GB                                         ║
+║   CPU Usage:  4.03%                                              │   Used:       5.20 GB  (0.5%)                                    ║
+║   Memory:     35.37% (2.62 GB / 7.42 GB)                         │   Free:       950.43 GB                                          ║
+║                                                                  │                                                                  ║
+║ BATTERY                                                          │ DISK I/O                                                         ║
+║   Status:     Discharging                                        │   sdd:                                                           ║
+║   Capacity:   80%  (Health: 100.0%)                              │     Read:  492.53 MB/s                                           ║
+║   Power:      1.20 W                                             │     Write: 108.46 MB/s                                           ║
+║   Time Est:   3h 20m remaining                                   │                                                                  ║
+║                                                                  │ NETWORK                                                          ║
+║ THERMAL & GPU                                                    │   eth0 (CONNECTED)                                               ║
+║   CPU Temp:   N/A (Max: N/A)                                     │     ↓ 1.95 Mbps | ↑ 2.76 Mbps                                    ║
+║   GPU [0]:    NVIDIA GeForce RTX 4050 Laptop GPU                 │     Total Rx Err/Drop: 0 / 0                                     ║
+║     49°C | 0% | 14.26W                                           │     Total Tx Err/Drop: 0 / 0                                     ║
+║                                                                  │     Total Data:  929.42 MB                                       ║
+╚══════════════════════════════════════════════════════════════════╧══════════════════════════════════════════════════════════════════╝
 
+ Press Ctrl+C to exit.
 ---
 
 ## 🧪 Testing Suite Matrix
@@ -132,7 +121,7 @@ The suite isolates production code behavior by injecting dynamically generated t
 pytest -v
 ```
 
-### Coverage Blueprint (118 Passing Tests)
+### Coverage Blueprint (198 Passing Tests)
 
 - **Mathematical Accuracy:** Verifies unit conversion paths and CPU/Disk/Network time delta operations.
 - **Hardware Mocking:** Simulates `lm-sensors`, `pynvml`, `/proc/diskstats`, and `/proc/net/dev` across various hardware profiles.
