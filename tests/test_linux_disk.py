@@ -1,78 +1,187 @@
-import pytest
 from unittest.mock import patch, MagicMock
 from engine.linux_disk import LinuxDiskSampler
-from engine.models import DiskIOSnapshot, DiskSpaceSnapshot
+from engine.results_and_errors import Errors
+
 
 def test_disk_space_snapshot():
-    # Mock the psutil response so we don't depend on the actual machine's disk
     fake_usage = MagicMock()
-    fake_usage.total = 1000 * (1024**3)  # 1000 GB
-    fake_usage.used = 400 * (1024**3)    # 400 GB
-    fake_usage.free = 600 * (1024**3)    # 600 GB
+    fake_usage.total = 1000 * (1024**3)
+    fake_usage.used = 400 * (1024**3)
+    fake_usage.free = 600 * (1024**3)
     fake_usage.percent = 40.0
 
     with patch("engine.linux_disk.psutil.disk_usage", return_value=fake_usage):
-        sampler = LinuxDiskSampler()
-        snapshot = sampler.get_space_snapshot()
+        snap = LinuxDiskSampler().get_space_snapshot()
 
-        assert snapshot.total_gb == 1000.0
-        assert snapshot.used_gb == 400.0
-        assert snapshot.free_gb == 600.0
-        assert snapshot.percent == 40.0
+    assert snap.total_gb == 1000.0
+    assert snap.used_gb == 400.0
+    assert snap.free_gb == 600.0
+    assert snap.percent == 40.0
+
+
+def test_disk_space_exception_returns_zeros():
+    with patch("engine.linux_disk.psutil.disk_usage", side_effect=OSError):
+        snap = LinuxDiskSampler().get_space_snapshot()
+
+    assert snap.total_gb == 0.0
+    assert snap.used_gb == 0.0
+    assert snap.free_gb == 0.0
+    assert snap.percent == 0.0
 
 
 def test_disk_io_first_run_primes_baseline(tmp_path):
-    fake_diskstats = tmp_path / "diskstats"
-    # 8 = major, 0 = minor, sda = name, then 11 numbers (we need at least 14 fields total)
-    fake_diskstats.write_text("8 0 sda 100 0 2000 0 100 0 4000 0 0 0 0\n")
+    f = tmp_path / "diskstats"
+    f.write_text("8 0 sda 100 0 2000 0 100 0 4000 0 0 0 0\n")
 
-    sampler = LinuxDiskSampler(diskstats_path=str(fake_diskstats))
-    snapshots = sampler.get_io_snapshot()
+    sampler = LinuxDiskSampler(diskstats_path=str(f))
 
-    # First run should return empty list because there is no delta yet
-    assert snapshots == []
+    assert sampler.get_io_snapshot() == []
     assert sampler._last_stats is not None
 
 
 @patch("engine.linux_disk.time.monotonic")
 def test_disk_io_delta_math(mock_time, tmp_path):
-    fake_diskstats = tmp_path / "diskstats"
-    
-    # Baseline at Time = 100.0
-    fake_diskstats.write_text("8 0 sda 100 0 2048 0 100 0 4096 0 0 0 0\n")
+    f = tmp_path / "diskstats"
+    f.write_text("8 0 sda 100 0 2048 0 100 0 4096 0 0 0 0\n")
     mock_time.return_value = 100.0
-    sampler = LinuxDiskSampler(diskstats_path=str(fake_diskstats))
-    sampler.get_io_snapshot() # Primes baseline
+    sampler = LinuxDiskSampler(diskstats_path=str(f))
+    sampler.get_io_snapshot()
 
-    # Time = 101.0 (1 second later)
-    # Read delta: 4096 - 2048 = 2048 sectors
-    # Write delta: 8192 - 4096 = 4096 sectors
-    fake_diskstats.write_text("8 0 sda 200 0 4096 0 200 0 8192 0 0 0 0\n")
+    f.write_text("8 0 sda 200 0 4096 0 200 0 8192 0 0 0 0\n")
     mock_time.return_value = 101.0
-    snapshots = sampler.get_io_snapshot()
+    snaps = sampler.get_io_snapshot()
 
-    assert len(snapshots) == 1
-    sda = snapshots[0]
-    
-    # Math: (2048 * 512) / (1024 * 1024) / 1.0 = 1.0 MB/s
-    assert sda.read_mbps == 1.0
-    # Math: (4096 * 512) / (1024 * 1024) / 1.0 = 2.0 MB/s
-    assert sda.write_mbps == 2.0
+    assert len(snaps) == 1
+    assert snaps[0].read_mbps == 1.0
+    assert snaps[0].write_mbps == 2.0
+
+
+@patch("engine.linux_disk.time.monotonic")
+def test_disk_io_negative_delta_clamped(mock_time, tmp_path):
+    f = tmp_path / "diskstats"
+    f.write_text("8 0 sda 100 0 10000 0 100 0 10000 0 0 0 0\n")
+    mock_time.return_value = 100.0
+    sampler = LinuxDiskSampler(diskstats_path=str(f))
+    sampler.get_io_snapshot()
+
+    f.write_text("8 0 sda 100 0 5000 0 100 0 5000 0 0 0 0\n")
+    mock_time.return_value = 101.0
+    snaps = sampler.get_io_snapshot()
+
+    assert snaps[0].read_mbps == 0.0
+    assert snaps[0].write_mbps == 0.0
+
+
+@patch("engine.linux_disk.time.monotonic")
+def test_disk_io_zero_duration_treated_as_one_second(mock_time, tmp_path):
+    f = tmp_path / "diskstats"
+    f.write_text("8 0 sda 100 0 0 0 100 0 0 0 0 0 0\n")
+    mock_time.return_value = 100.0
+    sampler = LinuxDiskSampler(diskstats_path=str(f))
+    sampler.get_io_snapshot()
+
+    f.write_text("8 0 sda 100 0 2048 0 100 0 2048 0 0 0 0\n")
+    mock_time.return_value = 100.0
+    snaps = sampler.get_io_snapshot()
+
+    assert snaps[0].read_mbps == 1.0
+    assert snaps[0].write_mbps == 1.0
+
+
+@patch("engine.linux_disk.time.monotonic")
+def test_disk_io_new_device_not_in_output(mock_time, tmp_path):
+    f = tmp_path / "diskstats"
+    f.write_text("8 0 sda 100 0 0 0 100 0 0 0 0 0 0\n")
+    mock_time.return_value = 100.0
+    sampler = LinuxDiskSampler(diskstats_path=str(f))
+    sampler.get_io_snapshot()
+
+    f.write_text(
+        "8 0 sda 100 0 2048 0 100 0 2048 0 0 0 0\n"
+        "259 0 nvme0n1 100 0 999 0 100 0 999 0 0 0 0\n"
+    )
+    mock_time.return_value = 101.0
+    snaps = sampler.get_io_snapshot()
+
+    assert [s.device for s in snaps] == ["sda"]
 
 
 def test_disk_io_filters_partitions_and_virtual(tmp_path):
-    fake_diskstats = tmp_path / "diskstats"
-    # sda1 is a partition, loop0 is virtual, sda is physical
-    fake_diskstats.write_text(
+    f = tmp_path / "diskstats"
+    f.write_text(
         "8 0 sda 100 0 100 0 100 0 100 0 0 0 0\n"
         "8 1 sda1 100 0 100 0 100 0 100 0 0 0 0\n"
         "7 0 loop0 100 0 100 0 100 0 100 0 0 0 0\n"
     )
 
-    sampler = LinuxDiskSampler(diskstats_path=str(fake_diskstats))
-    result = sampler._get_disk_stats()
+    result = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
 
     assert result.error is None
-    assert "sda" in result.data
-    assert "sda1" not in result.data
-    assert "loop0" not in result.data
+    assert set(result.data) == {"sda"}
+
+
+def test_disk_stats_accepts_nvme_and_mmc(tmp_path):
+    f = tmp_path / "diskstats"
+    f.write_text(
+        "259 0 nvme0n1 0 0 0 0 0 0 0 0 0 0 0\n"
+        "179 0 mmcblk0 0 0 0 0 0 0 0 0 0 0 0\n"
+        "8 0 hda 0 0 0 0 0 0 0 0 0 0 0\n"
+        "252 0 vda 0 0 0 0 0 0 0 0 0 0 0\n"
+    )
+
+    result = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
+
+    assert result.error is None
+    assert set(result.data) == {"nvme0n1", "mmcblk0", "hda", "vda"}
+
+
+def test_disk_stats_no_valid_devices_is_not_present(tmp_path):
+    f = tmp_path / "diskstats"
+    f.write_text(
+        "8 1 sda1 100 0 100 0 100 0 100 0 0 0 0\n"
+        "7 0 loop0 100 0 100 0 100 0 100 0 0 0 0\n"
+    )
+
+    result = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
+
+    assert result.data is None
+    assert result.error == Errors.NOT_PRESENT
+
+
+def test_disk_stats_missing_file_is_file_not_found(tmp_path):
+    result = LinuxDiskSampler(
+        diskstats_path=str(tmp_path / "nope")
+    )._get_disk_stats()
+
+    assert result.data is None
+    assert result.error == Errors.FILE_NOT_FOUND
+
+
+def test_disk_stats_non_numeric_is_parse_failed(tmp_path):
+    f = tmp_path / "diskstats"
+    f.write_text("8 0 sda 100 0 abc 0 100 0 4000 0 0 0 0\n")
+
+    result = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
+
+    assert result.data is None
+    assert result.error == Errors.PARSE_FAILED
+
+
+def test_disk_stats_short_lines_skipped(tmp_path):
+    f = tmp_path / "diskstats"
+    f.write_text(
+        "8 0 sda 100 0\n"
+        "8 0 sda 100 0 100 0 100 0 100 0 0 0 0\n"
+    )
+
+    result = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
+
+    assert result.error is None
+    assert set(result.data) == {"sda"}
+
+
+def test_get_io_snapshot_returns_empty_on_error(tmp_path):
+    sampler = LinuxDiskSampler(diskstats_path=str(tmp_path / "nope"))
+
+    assert sampler.get_io_snapshot() == []
+    assert sampler._last_stats is None

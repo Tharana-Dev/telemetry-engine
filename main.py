@@ -30,19 +30,15 @@ def format_total_data(total_bytes):
 
 def print_side_by_side(left_lines, right_lines):
     """Prints two lists of strings next to each other, dynamically sizing to the terminal."""
-    # Get terminal width, fallback to 100 if undetectable
     term_width = shutil.get_terminal_size((100, 24)).columns
-    
-    # Ensure a minimum readable width
+
     if term_width < 80:
         term_width = 80
-        
-    # Calculate widths (accounting for ║, spaces, and │ separator)
+
     avail_width = term_width - 7
     left_width = avail_width // 2
     right_width = avail_width - left_width
 
-    # Wrap text to fit the columns, preserving indentation on wrapped lines
     wrapped_left = []
     for line in left_lines:
         if not line:
@@ -57,12 +53,10 @@ def print_side_by_side(left_lines, right_lines):
         else:
             wrapped_right.extend(textwrap.wrap(line, width=right_width, subsequent_indent='  '))
 
-    # Equalize lengths so we can zip them
     max_lines = max(len(wrapped_left), len(wrapped_right))
     wrapped_left.extend([""] * (max_lines - len(wrapped_left)))
     wrapped_right.extend([""] * (max_lines - len(wrapped_right)))
 
-    # Print the box
     print(f"╔{'═' * (left_width + 2)}╤{'═' * (right_width + 2)}╗")
     for left, right in zip(wrapped_left, wrapped_right):
         print(f"║ {left:<{left_width}} │ {right:<{right_width}} ║")
@@ -73,19 +67,35 @@ def main():
     sys_type = platform.system()
     fallback_active = False
     fallback_reason = None
-    
+    degraded_subsystems: list[str] = []
+
     if sys_type == "Linux":
         try:
             data = LinuxCollector()
-        except (PermissionError, FileNotFoundError) as e:
+        except Exception as e:
+            # K1: LinuxCollector now catches per-sampler failures internally
+            # (battery sysfs, /proc/meminfo, etc.), so reaching this branch
+            # means a *global* failure — e.g. ctypes can't load pynvml, an
+            # engine module failed to import, etc. In that case the whole
+            # native stack is untrustworthy and psutil fallback is correct.
             data = PsutilCollector()
             fallback_active = True
             fallback_reason = type(e).__name__
+        else:
+            # K1: partial failure is "degraded", not "fallback". The Linux
+            # collector is still serving most metrics natively; only some
+            # subsystems are missing. Surface which ones so the banner is
+            # honest about it.
+            if hasattr(data, "sampler_status"):
+                degraded_subsystems = [
+                    name for name, err in data.sampler_status().items()
+                    if err is not None
+                ]
     else:
         data = PsutilCollector()
-        
+
     clear_command = 'cls' if sys_type == "Windows" else 'clear'
-    
+
     try:
         while True:
             # --- Gather fresh snapshots ---
@@ -106,12 +116,12 @@ def main():
 
             try: disk_space, disk_space_error = data.get_disk_space_snapshot(), None
             except Exception as e: disk_space, disk_space_error = None, str(e)
-            
+
             try: network_data, network_error = data.get_network_snapshot(), None
             except Exception as e: network_data, network_error = None, str(e)
 
             os.system(clear_command)
-            
+
             left_col = []
             right_col = []
 
@@ -120,11 +130,14 @@ def main():
             # ==========================================
             left_col.append("SYSTEM & HARDWARE")
             left_col.append("─────────────────────────────")
-            
+
             if fallback_active:
                 left_col.append(f"Engine Mode:  FALLBACK ({fallback_reason})")
             elif sys_type != "Linux":
                 left_col.append(f"Engine Mode:  {sys_type} (psutil)")
+            elif degraded_subsystems:
+                left_col.append("Engine Mode:  Linux Native (degraded)")
+                left_col.append(f"  Missing:    {', '.join(degraded_subsystems)}")
             else:
                 left_col.append("Engine Mode:  Linux Native (/proc)")
             left_col.append("")
@@ -135,7 +148,7 @@ def main():
                 left_col.append("  CPU Usage:  Unavailable")
             else:
                 left_col.append(f"  CPU Usage:  {cpu.usage_pct}%")
-                
+
             if memory is None:
                 left_col.append("  Memory:     Unavailable")
             else:
@@ -153,7 +166,7 @@ def main():
                 cap_str = f"{battery.capacity}%" if battery.capacity is not None else "N/A"
                 health_str = f"{battery.health_percent:.1f}%" if battery.health_percent is not None and battery.health_percent > 0 else "N/A"
                 left_col.append(f"  Capacity:   {cap_str}  (Health: {health_str})")
-                
+
                 draw_str = f"{battery.power_watts:.2f} W" if battery.power_watts is not None and battery.power_watts > 0 else "N/A"
                 if battery.status == "Discharging" and battery.hours_left is not None and battery.hours_left > 0:
                     hrs = int(battery.hours_left)
@@ -176,7 +189,7 @@ def main():
                     cpu_t = f"{thermal.cpu_temp}°C" if thermal.cpu_temp is not None else "N/A"
                     cpu_m = f"{thermal.cpu_temp_max}°C" if thermal.cpu_temp_max is not None else "N/A"
                     left_col.append(f"  CPU Temp:   {cpu_t} (Max: {cpu_m})")
-                    
+
                     if thermal.system_fans:
                         for fan, rpm in thermal.system_fans.items():
                             left_col.append(f"  {fan.capitalize()}:{' ' * (10 - len(fan))} {rpm} RPM")
@@ -195,7 +208,6 @@ def main():
                         left_col.append("  GPU:        N/A")
                 else:
                     left_col.append("  GPU:        Unavailable (ECO/Driver)")
-
 
             # ==========================================
             # RIGHT COLUMN (I/O & Network)
@@ -250,17 +262,17 @@ def main():
                             right_col.append(f"    Total Data:  {format_total_data(item.total_gb)}")
                         else:
                             right_col.append("    Offline / Unplugged")
-                        right_col.append("") 
+                        right_col.append("")
 
             # ==========================================
             # PRINT EVERYTHING
             # ==========================================
             print_side_by_side(left_col, right_col)
-            
+
             print("\n Press Ctrl+C to exit.")
-            
+
             time.sleep(1)
-            
+
     except KeyboardInterrupt:
         print("\nProgram interrupted. Exiting gracefully.")
 

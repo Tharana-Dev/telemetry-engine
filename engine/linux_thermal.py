@@ -5,13 +5,43 @@ import json
 import pynvml
 from engine.results_and_errors import Errors, InternalResult
 
-# Pylance's pynvml stubs omit NVMLError_LibraryNotFound, but the runtime module
-# defines it (it subclasses NVMLError). getattr() returns Any so the type
-# checker stays quiet, and the fallback to NVMLError keeps this working if a
-# future pynvml release renames or removes the attribute.
-_LibraryNotFound = getattr(pynvml, "NVMLError_LibraryNotFound", pynvml.NVMLError)
-# Same trick for the "driver installed but not loaded" subclass.
-_DriverNotLoaded = getattr(pynvml, "NVMLError_DriverNotLoaded", pynvml.NVMLError)
+
+# ---------------------------------------------------------------------------
+# T2: Sentinel NVML error classes
+#
+# The previous pattern was:
+#     _LibraryNotFound = getattr(pynvml, "NVMLError_LibraryNotFound", pynvml.NVMLError)
+#
+# If the specific subclass wasn't defined (or got renamed) in the installed
+# pynvml version, the fallback to the base NVMLError meant `except X:` would
+# catch *every* NVML error — silently misreporting e.g. a crashed driver as
+# "library not found". Using a never-matching sentinel preserves the intent:
+# "catch this specific failure mode, or nothing at all."
+#
+# Pylance's pynvml stubs also omit NVMLError_LibraryNotFound / _DriverNotLoaded,
+# so the explicit try/except AttributeError keeps the type checker quiet too.
+# ---------------------------------------------------------------------------
+
+try:
+    _LibraryNotFound = pynvml.NVMLError_LibraryNotFound
+except AttributeError:
+    class _LibraryNotFound(Exception):
+        pass
+
+
+try:
+    _DriverNotLoaded = pynvml.NVMLError_DriverNotLoaded
+except AttributeError:
+    class _DriverNotLoaded(Exception):
+        pass
+
+
+try:
+    _NotSupported = pynvml.NVMLError_NotSupported
+except AttributeError:
+    class _NotSupported(Exception):
+        pass
+
 
 CPU_LOOKUP = {
     "coretemp": "Intel",
@@ -49,47 +79,67 @@ class LinuxThermalSampler:
                 return InternalResult(error=Errors.NOT_PRESENT)
 
             gpu_records: list[GpuInfo] = []
-            NotSupportedError = getattr(pynvml, "NVMLError_NotSupported", pynvml.NVMLError)
 
             for i in range(count):
-                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-
-                name = pynvml.nvmlDeviceGetName(handle)
-                if isinstance(name, bytes):
-                    name = name.decode("utf-8")
-
+                # ------------------------------------------------------------------
+                # T1: Per-GPU isolation. A single bad GPU (driver glitch, ECC
+                # corruption, transient NVMLError) must not abort the loop and
+                # drop the good data already collected for earlier GPUs. We
+                # catch the *base* NVMLError here — anything that escapes the
+                # inner NotSupported handles is treated as "skip this GPU."
+                # ------------------------------------------------------------------
                 try:
-                    temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-                except NotSupportedError:
-                    temp = None
+                    handle = pynvml.nvmlDeviceGetHandleByIndex(i)
 
-                try:
-                    usage = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
-                except NotSupportedError:
-                    usage = None
+                    name = pynvml.nvmlDeviceGetName(handle)
+                    if isinstance(name, bytes):
+                        name = name.decode("utf-8")
 
-                # Power is returned in milliwatts. Convert to Watts.
-                try:
-                    power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
-                    power_watts = round(power_mw / 1000, 2)
-                except NotSupportedError:
-                    power_watts = None
+                    try:
+                        temp = pynvml.nvmlDeviceGetTemperature(
+                            handle, pynvml.NVML_TEMPERATURE_GPU
+                        )
+                    except _NotSupported:
+                        temp = None
 
-                try:
-                    fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
-                except NotSupportedError:
-                    # EC owns the fan (common on laptops)
-                    fan_speed = None
+                    try:
+                        usage = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
+                    except _NotSupported:
+                        usage = None
 
-                gpu_data = GpuInfo(
-                    index=i,
-                    name=name,
-                    temperature_c=temp,
-                    utilization_pct=usage,
-                    power_w=power_watts,
-                    fan_speed_pct=fan_speed
-                )
-                gpu_records.append(gpu_data)
+                    # Power is returned in milliwatts. Convert to Watts.
+                    try:
+                        power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
+                        power_watts = round(power_mw / 1000, 2)
+                    except _NotSupported:
+                        power_watts = None
+
+                    try:
+                        fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
+                    except _NotSupported:
+                        # EC owns the fan (common on laptops)
+                        fan_speed = None
+
+                    gpu_records.append(GpuInfo(
+                        index=i,
+                        name=name,
+                        temperature_c=temp,
+                        utilization_pct=usage,
+                        power_w=power_watts,
+                        fan_speed_pct=fan_speed,
+                    ))
+
+                except pynvml.NVMLError:
+                    # T1: Skip this GPU; keep whatever we already collected.
+                    # Index `i` is the real NVML device index, so remaining
+                    # GPUs are still reported with their true indices (may be
+                    # non-contiguous — that's honest, not a bug).
+                    continue
+
+            if not gpu_records:
+                # Every device failed. Surface an error so the caller doesn't
+                # misread an empty list as "driver OK, no devices".
+                return InternalResult(error=Errors.PYNVML_ERROR)
 
             return InternalResult(data={"gpus": gpu_records})
 
@@ -223,7 +273,7 @@ class LinuxThermalSampler:
             board_vendor = sensor_data.data.get('board_vendor', 'Unknown')
         else:
             sensor_error = sensor_data.error.value if sensor_data.error else "Unknown Error"
-        
+
         # The dataclass's __post_init__ will automatically map the legacy single-GPU
         # properties (gpu_temp, gpu_fan, etc.) from the first item in this gpus list.
         return ThermalSnapshot(
