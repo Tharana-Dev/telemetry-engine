@@ -27,6 +27,39 @@ def format_total_data(total_bytes):
         total_bytes /= 1024.0
     return f"{total_bytes:.2f} PB"
 
+def format_disk_speed(bytes_per_second: float) -> str:
+    """Formats a raw bytes/sec rate as a human-readable disk I/O speed.
+
+    Uses binary base 1024 with KB/MB/GB labels — the `htop`/`ls -h`/`df -h`
+    convention. Deliberately *different* from `format_speed_bits`, which uses
+    networking's base-1000 bit convention (Kbps/Mbps).
+    """
+    if bytes_per_second is None or bytes_per_second < 0:
+        return "N/A"
+    if bytes_per_second < 1024:
+        return f"{bytes_per_second:.1f} B/s"
+    if bytes_per_second < 1024 ** 2:
+        return f"{bytes_per_second / 1024:.2f} KB/s"
+    if bytes_per_second < 1024 ** 3:
+        return f"{bytes_per_second / 1024 ** 2:.2f} MB/s"
+    return f"{bytes_per_second / 1024 ** 3:.2f} GB/s"
+
+
+def format_disk_size(bytes_val: int | float | None) -> str:
+    """Formats a raw byte count as a human-readable disk size (binary base 1024).
+
+    This is `format_total_data` with a shorter label set ("B" instead of
+    "Bytes") so it reads well next to the Disk Space rows. Kept as a distinct
+    helper because the disk-space UI will never reach the PB range and the
+    label width matters more here than in the network totals.
+    """
+    if bytes_val is None or bytes_val < 0:
+        return "N/A"
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if bytes_val < 1024.0:
+            return f"{bytes_val:.2f} {unit}"
+        bytes_val /= 1024.0
+    return f"{bytes_val:.2f} PB"
 
 def print_side_by_side(left_lines, right_lines):
     """Prints two lists of strings next to each other, dynamically sizing to the terminal."""
@@ -167,10 +200,10 @@ def main():
             else:
                 left_col.append(f"  Status:     {battery.status}")
                 cap_str = f"{battery.capacity}%" if battery.capacity is not None else "N/A"
-                health_str = f"{battery.health_percent:.1f}%" if battery.health_percent is not None and battery.health_percent > 0 else "N/A"
+                health_str = f"{battery.health_percent:.1f}%" if battery.health_percent is not None else "N/A"
                 left_col.append(f"  Capacity:   {cap_str}  (Health: {health_str})")
 
-                draw_str = f"{battery.power_watts:.2f} W" if battery.power_watts is not None and battery.power_watts > 0 else "N/A"
+                draw_str = f"{battery.power_watts:.2f} W" if battery.power_watts is not None else "N/A"
                 if battery.status == "Discharging" and battery.hours_left is not None and battery.hours_left > 0:
                     hrs = int(battery.hours_left)
                     mins = int((battery.hours_left - hrs) * 60)
@@ -225,9 +258,12 @@ def main():
             if disk_space_error is not None:
                 right_col.append(f"  Status:     Unavailable — {disk_space_error}")
             elif disk_space is not None:
-                right_col.append(f"  Total:      {disk_space.total_gb} GB")
-                right_col.append(f"  Used:       {disk_space.used_gb} GB  ({disk_space.percent}%)")
-                right_col.append(f"  Free:       {disk_space.free_gb} GB")
+                if disk_space.total_bytes is None:
+                    right_col.append("  Status:     Unavailable (read failed)")
+                else:
+                    right_col.append(f"  Total:      {format_disk_size(disk_space.total_bytes)}")
+                    right_col.append(f"  Used:       {format_disk_size(disk_space.used_bytes)}  ({disk_space.percent}%)")
+                    right_col.append(f"  Free:       {format_disk_size(disk_space.free_bytes)}")
             right_col.append("")
 
             # Disk I/O
@@ -247,10 +283,10 @@ def main():
                 else:
                     for io in disk_io:
                         right_col.append(f"  {io.device}:")
-                        right_col.append(f"    Read:  {io.read_mib} MiB/s")
-                        right_col.append(f"    Write: {io.write_mib} MiB/s")
+                        right_col.append(f"    Read:  {format_disk_speed(io.read_bps)}")
+                        right_col.append(f"    Write: {format_disk_speed(io.write_bps)}")
             right_col.append("")
-
+            
             # Network
             right_col.append("NETWORK")
             if network_error is not None:

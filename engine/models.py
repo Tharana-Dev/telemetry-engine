@@ -64,15 +64,16 @@ class ThermalSnapshot:
 @dataclass(frozen=True)
 class DiskIOSnapshot:
     device: str
-    read_mib: float
-    write_mib: float
+    read_bps: float          # raw bytes/sec
+    write_bps: float         # raw bytes/sec
+
 
 @dataclass(frozen=True)
 class DiskSpaceSnapshot:
-    total_gb: float
-    used_gb: float
-    free_gb: float
-    percent: float            
+    total_bytes: int | None
+    used_bytes: int | None
+    free_bytes: int | None
+    percent: float | None        
 
 @dataclass(frozen=True)
 class NetworkSnapshot:

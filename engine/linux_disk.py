@@ -70,7 +70,7 @@ class LinuxDiskSampler:
         except Exception:
             return InternalResult(error=Errors.UNKNOWN)
 
-    def get_io_snapshot(self) -> list[DiskIOSnapshot]:
+    def get_io_snapshot(self):
         current_time = time.monotonic()
         result = self._get_disk_stats()
 
@@ -102,12 +102,13 @@ class LinuxDiskSampler:
                 continue
             read_delta = max(0, data2["read"] - data1["read"])
             write_delta = max(0, data2["write"] - data1["write"])
-            read_mb_s = (read_delta * 512) / (1024 * 1024) / duration
-            write_mb_s = (write_delta * 512) / (1024 * 1024) / duration
+            # Raw bytes/sec — no MiB conversion here. The view formats.
+            read_bps = (read_delta * 512) / duration
+            write_bps = (write_delta * 512) / duration
             snapshots.append(DiskIOSnapshot(
                 device=dev,
-                read_mib=round(read_mb_s, 2),
-                write_mib=round(write_mb_s, 2),
+                read_bps=read_bps,
+                write_bps=write_bps,
             ))
 
         if current_stats:
@@ -120,12 +121,17 @@ class LinuxDiskSampler:
         try:
             usage = shutil.disk_usage(self.root_path)
             return DiskSpaceSnapshot(
-                total_gb=round(usage.total / (1024**3), 2),
-                used_gb=round(usage.used / (1024**3), 2),
-                free_gb=round(usage.free / (1024**3), 2),
-                percent=round(usage.used / usage.total * 100, 1),
+                total_bytes=usage.total,
+                used_bytes=usage.used,
+                free_bytes=usage.free,
+                percent=round(usage.used / usage.total * 100, 1) if usage.total > 0 else None,
             )
         except Exception:
+            # Read failure is not a crash — it's "no data". None signals that
+            # the view should render "N/A" instead of "0.00 GB".
             return DiskSpaceSnapshot(
-                total_gb=0.0, used_gb=0.0, free_gb=0.0, percent=0.0,
+                total_bytes=None,
+                used_bytes=None,
+                free_bytes=None,
+                percent=None,
             )
