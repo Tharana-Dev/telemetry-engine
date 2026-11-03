@@ -95,7 +95,7 @@ def main():
         data = PsutilCollector()
 
     clear_command = 'cls' if sys_type == "Windows" else 'clear'
-
+    empty_network_ticks = 0 
     try:
         while True:
             # --- Gather fresh snapshots ---
@@ -236,8 +236,8 @@ def main():
                 else:
                     for io in disk_io:
                         right_col.append(f"  {io.device}:")
-                        right_col.append(f"    Read:  {io.read_mbps} MB/s")
-                        right_col.append(f"    Write: {io.write_mbps} MB/s")
+                        right_col.append(f"    Read:  {io.read_mib} MiB/s")
+                        right_col.append(f"    Write: {io.write_mib} MiB/s")
             right_col.append("")
 
             # Network
@@ -246,16 +246,21 @@ def main():
                 right_col.append("  Status:     Unavailable")
             elif network_data is not None:
                 if not network_data:
-                    right_col.append("  Status:     Initializing (1s delta)")
+                    empty_network_ticks += 1
+                    if empty_network_ticks > 2:
+                        right_col.append("  Status:     No interfaces detected")
+                    else:
+                        right_col.append("  Status:     Initializing (1s delta)")
                 else:
+                    empty_network_ticks = 0  # Reset timer when data comes in
                     for item in network_data:
                         right_col.append(f"  {item.interface} ({item.status})")
                         if item.status == "CONNECTED":
                             down = format_speed_bits(item.download_bps)
                             up = format_speed_bits(item.upload_bps)
                             right_col.append(f"    ↓ {down} | ↑ {up}")
-                            right_col.append(f"    Rx Err/Drop: {item.rx_errors} / {item.rx_drops}")
-                            right_col.append(f"    Tx Err/Drop: {item.tx_errors} / {item.tx_drops}")
+                            right_col.append(f"    Total Rx Err/Drop: {item.rx_errors} / {item.rx_drops}")
+                            right_col.append(f"    Total Tx Err/Drop: {item.tx_errors} / {item.tx_drops}")
                             right_col.append(f"    Total Data:  {format_total_data(item.total_bytes)}")
                         elif item.status == "CONNECTING":
                             right_col.append("    Initializing link...")

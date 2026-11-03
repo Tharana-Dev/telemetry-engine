@@ -64,8 +64,8 @@ class ThermalSnapshot:
 @dataclass(frozen=True)
 class DiskIOSnapshot:
     device: str
-    read_mbps: float
-    write_mbps: float
+    read_mib: float
+    write_mib: float
 
 @dataclass(frozen=True)
 class DiskSpaceSnapshot:

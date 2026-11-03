@@ -109,7 +109,7 @@ def test_interface_disconnect(tmp_path, monkeypatch):
     assert wlan.upload_bps == 0.00     # note lowercase 'k' in impl
     assert wlan.rx_errors == 0
     assert wlan.tx_errors == 0
-    assert wlan.total_bytes == 0.00
+    assert wlan.total_bytes == 80000
 
 
 def test_counter_reset_edge_case(tmp_path, monkeypatch):

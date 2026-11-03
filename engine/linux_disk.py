@@ -1,11 +1,11 @@
 import re
 import time
-import psutil
+import shutil
 from engine.models import DiskIOSnapshot, DiskSpaceSnapshot
 from engine.results_and_errors import Errors, InternalResult
 
 DEVICE_PATTERN = re.compile(
-    r'^(?:sd[a-z]+|hd[a-z]+|vd[a-z]+|nvme\d+n\d+|mmcblk\d+)$'
+    r'^(?:sd[a-z]+|hd[a-z]+|vd[a-z]+|nvme\d+n\d+|mmcblk\d+|xv[a-z]+)$'
 )
 
 class LinuxDiskSampler:
@@ -47,10 +47,10 @@ class LinuxDiskSampler:
         result = self._get_disk_stats()
         
         # If we failed to read, return empty
-        if result.error or not result.data:
+        if result.error:
             return []
             
-        current_stats = result.data
+        current_stats = result.data or {}
         
         # First run: prime the baseline and return 0.0
         if self._last_stats is None or self._last_time is None:
@@ -75,8 +75,8 @@ class LinuxDiskSampler:
                 
                 snapshots.append(DiskIOSnapshot(
                     device=dev,
-                    read_mbps=round(read_mb_s, 2),
-                    write_mbps=round(write_mb_s, 2)
+                    read_mib=round(read_mb_s, 2),
+                    write_mib=round(write_mb_s, 2)
                 ))
                 
         # Update baseline for next run
@@ -85,14 +85,17 @@ class LinuxDiskSampler:
         
         return snapshots
 
-    def get_space_snapshot(self) -> DiskSpaceSnapshot: 
-        try: 
-            usage = psutil.disk_usage(self.root_path) 
-            return DiskSpaceSnapshot( 
-                total_gb=round(usage.total / (1024**3), 2), 
-                used_gb=round(usage.used / (1024**3), 2), 
-                free_gb=round(usage.free / (1024**3), 2), 
-                percent=round(usage.percent, 1) 
-            ) 
-        except Exception: 
+
+    def get_space_snapshot(self) -> DiskSpaceSnapshot:
+        try:
+            usage = shutil.disk_usage(self.root_path)
+            return DiskSpaceSnapshot(
+                total_gb=round(usage.total / (1024**3), 2),
+                used_gb=round(usage.used / (1024**3), 2),
+                free_gb=round(usage.free / (1024**3), 2),
+                percent=round(usage.used / usage.total * 100, 1)
+            )
+        except Exception as e:
+            # If it fails, at least log why
+            print(f"Disk space error: {e}")
             return DiskSpaceSnapshot(total_gb=0.0, used_gb=0.0, free_gb=0.0, percent=0.0)

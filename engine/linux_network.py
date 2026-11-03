@@ -5,7 +5,7 @@ import re
 import time
 
 # physical interfaces only
-VALID_PREFIX = re.compile(r'^(eth|wlan|enp|eno|wlp|enx)')
+VALID_PREFIX = re.compile(r'^(eth|wlan|enp|eno|wlp|enx|ens|wlx|wwan|wwp|em|p[0-9])')
 
 
 class LinuxNetworkSampler:
@@ -13,7 +13,6 @@ class LinuxNetworkSampler:
         self.netdev_path = netdev_path
         self._last_stats = None
         self._last_time = None
-        self.count = 1
 
     def _get_raw_stats(self):
         interfaces = {}
@@ -52,10 +51,10 @@ class LinuxNetworkSampler:
         current_time = time.monotonic()
         result = self._get_raw_stats()
 
-        if result.error or not result.data:
+        if result.error:
             return []
 
-        current_stats = result.data
+        current_stats = result.data or {}
 
         if self._last_stats is None or self._last_time is None:
             self._last_stats = current_stats
@@ -70,16 +69,17 @@ class LinuxNetworkSampler:
         for interface in sorted(all_interfaces):
             # State 1: Interface disconnected mid-session
             if interface not in current_stats:
+                last = self._last_stats.get(interface, {})
                 snapshots.append(NetworkSnapshot(
                     interface= interface,
                     status= "DISCONNECTED",
                     download_bps= 0.00,
                     upload_bps= 0.00,
-                    rx_errors= 0,
-                    tx_errors= 0,
-                    rx_drops= 0,
-                    tx_drops= 0,
-                    total_bytes=0.00
+                    rx_errors= last.get("rx_errs", 0),
+                    tx_errors= last.get("tx_errs", 0),
+                    rx_drops= last.get("rx_drop", 0),
+                    tx_drops= last.get("tx_drop", 0),
+                    total_bytes= last.get("rx_bytes", 0) + last.get("tx_bytes", 0),
                 ))
                 
                 continue
@@ -109,7 +109,7 @@ class LinuxNetworkSampler:
             
             # State 3: Standard Operational Connected Calculations
             deltas = {}
-            if isinstance(current_stats, dict) and isinstance(self._last_stats, dict):
+            if isinstance(current_stats, dict) and isinstance(self._last_stats, dict):  #kept for mypy safet if not it gives error
                 for key in ["rx_bytes", "tx_bytes"]:
                     diff = current_stats[interface][key] - self._last_stats[interface][key]
                     deltas[key] = max(0, diff) # Safe rollback clamping logic
@@ -127,16 +127,16 @@ class LinuxNetworkSampler:
                 snapshots.append(NetworkSnapshot(
                     interface= interface,
                     status= "CONNECTED",
-                    download_bps= rx_bps,
-                    upload_bps= tx_bps,
+                    download_bps= round(rx_bps,2),
+                    upload_bps= round(tx_bps,2),
                     rx_errors= rx_issue,
                     tx_errors= tx_issue,
                     rx_drops= rx_drop,
                     tx_drops= tx_drop,
-                    total_bytes=total_bytes
+                    total_bytes= round(total_bytes,2)
                 ))
-        
-        self._last_stats = current_stats
-        self._last_time = current_time
+        if current_stats:
+            self._last_stats = current_stats
+            self._last_time = current_time
         
         return snapshots

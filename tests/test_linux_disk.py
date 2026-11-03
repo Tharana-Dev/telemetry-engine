@@ -10,7 +10,7 @@ def test_disk_space_snapshot():
     fake_usage.free = 600 * (1024**3)
     fake_usage.percent = 40.0
 
-    with patch("engine.linux_disk.psutil.disk_usage", return_value=fake_usage):
+    with patch("engine.linux_disk.shutil.disk_usage", return_value=fake_usage):
         snap = LinuxDiskSampler().get_space_snapshot()
 
     assert snap.total_gb == 1000.0
@@ -20,7 +20,7 @@ def test_disk_space_snapshot():
 
 
 def test_disk_space_exception_returns_zeros():
-    with patch("engine.linux_disk.psutil.disk_usage", side_effect=OSError):
+    with patch("engine.linux_disk.shutil.disk_usage", side_effect=OSError):
         snap = LinuxDiskSampler().get_space_snapshot()
 
     assert snap.total_gb == 0.0
@@ -52,8 +52,8 @@ def test_disk_io_delta_math(mock_time, tmp_path):
     snaps = sampler.get_io_snapshot()
 
     assert len(snaps) == 1
-    assert snaps[0].read_mbps == 1.0
-    assert snaps[0].write_mbps == 2.0
+    assert snaps[0].read_mib == 1.0
+    assert snaps[0].write_mib == 2.0
 
 
 @patch("engine.linux_disk.time.monotonic")
@@ -68,8 +68,8 @@ def test_disk_io_negative_delta_clamped(mock_time, tmp_path):
     mock_time.return_value = 101.0
     snaps = sampler.get_io_snapshot()
 
-    assert snaps[0].read_mbps == 0.0
-    assert snaps[0].write_mbps == 0.0
+    assert snaps[0].read_mib == 0.0
+    assert snaps[0].write_mib == 0.0
 
 
 @patch("engine.linux_disk.time.monotonic")
@@ -84,8 +84,8 @@ def test_disk_io_zero_duration_treated_as_one_second(mock_time, tmp_path):
     mock_time.return_value = 100.0
     snaps = sampler.get_io_snapshot()
 
-    assert snaps[0].read_mbps == 1.0
-    assert snaps[0].write_mbps == 1.0
+    assert snaps[0].read_mib == 1.0
+    assert snaps[0].write_mib == 1.0
 
 
 @patch("engine.linux_disk.time.monotonic")
