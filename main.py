@@ -130,33 +130,47 @@ def main():
             print("====================================")
             print("         BATTERY TELEMETRY          ")
             print("====================================")
-            
+
             if battery_error is not None:
                 print(f"Battery:                  Unavailable ({battery_error})")
             elif battery is None:
                 print("Battery:                  Not Detected (Desktop/Server)")
             else:
-                if battery.status == "Discharging" and battery.hours_left > 0:
+                # B1: only show a countdown when we actually have one.
+                if (
+                    battery.status == "Discharging"
+                    and battery.hours_left is not None
+                    and battery.hours_left > 0
+                ):
                     hours = int(battery.hours_left)
                     minutes = int((battery.hours_left - hours) * 60)
                     time_str = f"{hours}h {minutes}m remaining"
                 elif battery.status in ("Charging", "Full", "Not charging") or battery.online:
                     time_str = "Wall Power (AC)"
-                else:
+                elif battery.hours_left is not None:
                     time_str = "Calculating..."
+                else:
+                    time_str = "N/A"
 
-                if battery.health_percent <= 0 or (fallback_active and battery.health_percent == 100.0):
+                # B9: None means "not reported by this driver".
+                if battery.health_percent is None or battery.health_percent <= 0:
+                    health_str = "N/A"
+                elif fallback_active and battery.health_percent == 100.0:
                     health_str = "N/A (OS Wrapper Restriction)"
                 else:
                     health_str = f"{battery.health_percent:.1f}%"
 
-                if battery.power_watts <= 0:
-                    draw_str = "N/A (OS Wrapper Restriction)"
+                if battery.power_watts is None or battery.power_watts <= 0:
+                    draw_str = "N/A"
                 else:
                     draw_str = f"{battery.power_watts:.3f} W"
 
+                capacity_str = (
+                    f"{battery.capacity}%" if battery.capacity is not None else "N/A"
+                )
+
                 print(f"Status:                   {battery.status}")
-                print(f"Capacity:                 {battery.capacity}%")
+                print(f"Capacity:                 {capacity_str}")
                 print(f"Power Draw:               {draw_str}")
                 print(f"Time Estimate:            {time_str}")
                 print(f"Battery Health:           {health_str}")

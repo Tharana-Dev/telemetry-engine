@@ -72,4 +72,10 @@ class LinuxCpuSampler:
             return CpuSnapshot(usage_pct=0.0)
 
         usage_pct = (1.0 - (delta_idle / delta_total)) * 100
+
+        # C1: iowait is not strictly monotonic on all kernels — it can dip
+        # between reads, making delta_idle negative and driving usage_pct
+        # above 100 (or below 0 if delta_idle exceeds delta_total). Clamp
+        # to the physically meaningful range before rounding.
+        usage_pct = max(0.0, min(100.0, usage_pct))
         return CpuSnapshot(usage_pct=round(usage_pct, 2))

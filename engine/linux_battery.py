@@ -24,7 +24,6 @@ class LinuxBatterySampler:
         if self.battery_path is None:
             return None
 
-        # Battery status, e.g. "Charging", "Discharging", "Full", "Not charging".
         status = self._read_val("status") or "Unknown"
 
         # Figure out whether we're running on wall power. If there's an AC
@@ -35,60 +34,60 @@ class LinuxBatterySampler:
         else:
             online = status in ("Charging", "Full")
 
-        # Battery charge percentage. Missing file -> treat as 0, don't crash.
+        # B9: missing capacity is None, not 0 (0% would look like a dead battery).
         capacity = self._read_int("capacity")
-        if capacity is None:
-            capacity = 0
 
-        power_watts = 0.0
-        hours_left = 0.0
+        power_watts: float | None = None
+        hours_left: float | None = None
 
         # Linux exposes two flavours of batteries in sysfs:
         #   1. Energy-based: energy_now (µWh), power_now (µW)
         #   2. Charge-based: charge_now (µAh), current_now (µA)
-        # Try energy first, fall back to charge. Both are common in the wild.
         energy_now = self._read_int("energy_now")
         if energy_now is not None:
             energy_now_converted = energy_now / 1_000_000  # µWh -> Wh
 
-            # Prefer power_now if present — it's already in watts.
             power = self._read_int("power_now")
             if power is not None:
-                power_watts = power / 1_000_000  # µW -> W
+                # B2: some drivers report negative power; take magnitude.
+                power_watts = abs(power) / 1_000_000  # µW -> W
             else:
-                # Some drivers only expose current & voltage; derive power.
                 current = self._read_int("current_now")
                 voltage = self._read_int("voltage_now")
                 if current is not None and voltage is not None:
-                    # µA * µV = pW, so divide by 1e12 to get W.
-                    power_watts = (current * voltage) / 1_000_000_000_000
+                    # µA * µV = pW -> W; sign of current varies by driver.
+                    power_watts = abs(current * voltage) / 1_000_000_000_000
 
-            # Time remaining only makes sense while discharging.
-            if power_watts > 0 and not online:
+            # B1: only compute remaining time while actually discharging.
+            # Do NOT trust `online` alone — USB-C charging quirks can leave
+            # the AC adapter reporting online=0 while the battery is charging.
+            if status == "Discharging" and power_watts is not None and power_watts > 0:
                 hours_left = round(energy_now_converted / power_watts, 2)
         else:
-            # Charge-based fallback. We can still get hours_left directly,
-            # because µAh / µA = hours — no voltage needed.
+            # Charge-based fallback. µAh / µA = hours — no voltage needed.
             charge_now = self._read_int("charge_now")
             current = self._read_int("current_now")
             if charge_now is not None and current is not None:
                 current_abs = abs(current)
-                if current_abs > 0 and not online:
+                # B1: again, gate on actual discharging state.
+                if status == "Discharging" and current_abs > 0:
                     hours_left = round(charge_now / current_abs, 2)
-            # power_watts stays 0 here — no voltage available to compute watts.
+            # power_watts stays None — no voltage available to compute watts.
 
-        # Health = full capacity vs. design capacity, as a percentage.
-        # Try the energy pair first, then the charge pair; both give a ratio.
+        # B9: health is None if either capacity figure is missing; do not
+        # pretend the battery is at 100% health.
         efull = self._read_int("energy_full")
         edesign = self._read_int("energy_full_design")
         if efull is None or edesign is None:
             cfull = self._read_int("charge_full")
             cdesign = self._read_int("charge_full_design")
-            efull = cfull if cfull is not None else 0
-            edesign = cdesign if cdesign is not None else 0
+            efull = cfull
+            edesign = cdesign
 
-        # Avoid divide-by-zero on weird drivers.
-        health_percent = min(round((efull / edesign) * 100, 1), 100.0) if edesign > 0 else 100.0
+        if efull is not None and edesign is not None and edesign > 0:
+            health_percent: float | None = min(round((efull / edesign) * 100, 1), 100.0)
+        else:
+            health_percent = None
 
         return BatterySnapshot(
             online=online,
@@ -98,7 +97,7 @@ class LinuxBatterySampler:
             hours_left=hours_left,
             health_percent=health_percent,
         )
-
+        
     def _read_val(self, filename: str, base_path: str | None = None) -> str | None:
         # Default base is the battery folder. Callers can pass an override
         # to read from the AC folder (for the "online" file).
