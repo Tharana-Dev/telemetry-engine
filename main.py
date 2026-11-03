@@ -1,13 +1,16 @@
 import os
 import time
+import platform
+import textwrap
+import shutil
 from engine.linux_sampler import LinuxCollector
 from engine.psutil_sampler import PsutilCollector
-import platform
+
 
 def format_speed_bits(bytes_per_second):
     """Converts bytes/sec to bits/sec and formats as industry-standard Kbps or Mbps."""
     bits_per_second = bytes_per_second * 8
-    kbps = bits_per_second / 1000  # Networking standard uses base-1000 for bits
+    kbps = bits_per_second / 1000
 
     if kbps < 1000:
         return f"{kbps:.2f} Kbps"
@@ -15,8 +18,9 @@ def format_speed_bits(bytes_per_second):
         mbps = kbps / 1000
         return f"{mbps:.2f} Mbps"
 
+
 def format_total_data(total_bytes):
-    """Converts total cumulative bytes into binary human-readable strings (KB, MB, GB)."""
+    """Converts total cumulative bytes into binary human-readable strings."""
     for unit in ['Bytes', 'KB', 'MB', 'GB', 'TB']:
         if total_bytes < 1024.0:
             return f"{total_bytes:.2f} {unit}"
@@ -24,12 +28,52 @@ def format_total_data(total_bytes):
     return f"{total_bytes:.2f} PB"
 
 
+def print_side_by_side(left_lines, right_lines):
+    """Prints two lists of strings next to each other, dynamically sizing to the terminal."""
+    # Get terminal width, fallback to 100 if undetectable
+    term_width = shutil.get_terminal_size((100, 24)).columns
+    
+    # Ensure a minimum readable width
+    if term_width < 80:
+        term_width = 80
+        
+    # Calculate widths (accounting for ║, spaces, and │ separator)
+    avail_width = term_width - 7
+    left_width = avail_width // 2
+    right_width = avail_width - left_width
+
+    # Wrap text to fit the columns, preserving indentation on wrapped lines
+    wrapped_left = []
+    for line in left_lines:
+        if not line:
+            wrapped_left.append("")
+        else:
+            wrapped_left.extend(textwrap.wrap(line, width=left_width, subsequent_indent='  '))
+
+    wrapped_right = []
+    for line in right_lines:
+        if not line:
+            wrapped_right.append("")
+        else:
+            wrapped_right.extend(textwrap.wrap(line, width=right_width, subsequent_indent='  '))
+
+    # Equalize lengths so we can zip them
+    max_lines = max(len(wrapped_left), len(wrapped_right))
+    wrapped_left.extend([""] * (max_lines - len(wrapped_left)))
+    wrapped_right.extend([""] * (max_lines - len(wrapped_right)))
+
+    # Print the box
+    print(f"╔{'═' * (left_width + 2)}╤{'═' * (right_width + 2)}╗")
+    for left, right in zip(wrapped_left, wrapped_right):
+        print(f"║ {left:<{left_width}} │ {right:<{right_width}} ║")
+    print(f"╚{'═' * (left_width + 2)}╧{'═' * (right_width + 2)}╝")
+
+
 def main():
     sys_type = platform.system()
     fallback_active = False
     fallback_reason = None
     
-    # 1. Attempt to initialize the requested subsystem Engine
     if sys_type == "Linux":
         try:
             data = LinuxCollector()
@@ -44,247 +88,182 @@ def main():
     
     try:
         while True:
-            # --- Gather fresh snapshots (each isolated) ---
-            try:
-                cpu = data.get_cpu_snapshot()
-                cpu_error = None
-            except Exception as e:
-                cpu = None
-                cpu_error = str(e)
+            # --- Gather fresh snapshots ---
+            try: cpu, cpu_error = data.get_cpu_snapshot(), None
+            except Exception as e: cpu, cpu_error = None, str(e)
 
-            try:
-                memory = data.get_memory_snapshot()
-                memory_error = None
-            except Exception as e:
-                memory = None
-                memory_error = str(e)
+            try: memory, memory_error = data.get_memory_snapshot(), None
+            except Exception as e: memory, memory_error = None, str(e)
 
-            try:
-                battery = data.get_battery_snapshot()
-                battery_error = None
-            except Exception as e:
-                battery = None
-                battery_error = str(e)
+            try: battery, battery_error = data.get_battery_snapshot(), None
+            except Exception as e: battery, battery_error = None, str(e)
 
-            try:
-                thermal = data.get_thermal_snapshot()
-                thermal_error = None
-            except Exception as e:
-                thermal = None
-                thermal_error = str(e)
+            try: thermal, thermal_error = data.get_thermal_snapshot(), None
+            except Exception as e: thermal, thermal_error = None, str(e)
 
-            try:
-                disk_io = data.get_disk_io_snapshot()
-                disk_io_error = None
-            except Exception as e:
-                disk_io = None
-                disk_io_error = str(e)
+            try: disk_io, disk_io_error = data.get_disk_io_snapshot(), None
+            except Exception as e: disk_io, disk_io_error = None, str(e)
 
-            try:
-                disk_space = data.get_disk_space_snapshot()
-                disk_space_error = None
-            except Exception as e:
-                disk_space = None
-                disk_space_error = str(e)
+            try: disk_space, disk_space_error = data.get_disk_space_snapshot(), None
+            except Exception as e: disk_space, disk_space_error = None, str(e)
             
-            try:
-                network_data = data.get_network_snapshot()
-                network_error = None
-            except Exception as e:
-                network_data = None
-                network_error = str(e)
+            try: network_data, network_error = data.get_network_snapshot(), None
+            except Exception as e: network_data, network_error = None, str(e)
 
             os.system(clear_command)
             
-            print("====================================") 
-            print("      SYSTEM TELEMETRY ENGINE       ") 
-            print("====================================") 
+            left_col = []
+            right_col = []
+
+            # ==========================================
+            # LEFT COLUMN (System & Hardware)
+            # ==========================================
+            left_col.append("SYSTEM & HARDWARE")
+            left_col.append("─────────────────────────────")
             
             if fallback_active:
-                print(f"[!] ENGINE FALLBACK ACTIVE ({fallback_reason})")
-                print("[!] Using: psutil cross-platform core")
-                print("------------------------------------")
+                left_col.append(f"Engine Mode:  FALLBACK ({fallback_reason})")
             elif sys_type != "Linux":
-                print(f"[*] ENGINE MODE: Native Cross-Platform ({sys_type})")
-                print("------------------------------------")
+                left_col.append(f"Engine Mode:  {sys_type} (psutil)")
             else:
-                print("[*] ENGINE MODE: High-Performance Linux Native (/proc)")
-                print("------------------------------------")
-                
-            # --- CPU & MEMORY BLOCKS ---
+                left_col.append("Engine Mode:  Linux Native (/proc)")
+            left_col.append("")
+
+            # CPU & Memory
+            left_col.append("CPU & MEMORY")
             if cpu is None:
-                print(f"CPU Usage:                Unavailable ({cpu_error})")
+                left_col.append("  CPU Usage:  Unavailable")
             else:
-                print(f"CPU Usage:                {cpu.usage_pct}%") 
-            print("------------------------------------") 
-
+                left_col.append(f"  CPU Usage:  {cpu.usage_pct}%")
+                
             if memory is None:
-                print(f"Memory:                   Unavailable ({memory_error})")
+                left_col.append("  Memory:     Unavailable")
             else:
-                print(f"Total Memory:             {round(memory.total_gb, 2)} GB") 
-                print(f"Used Memory:              {round(memory.used_gb, 2)} GB") 
-                print(f"Available Memory:         {round(memory.available_gb, 2)} GB") 
-                print(f"Memory Usage Percentage:  {round(memory.used_pct, 2)}%") 
-            
-            # --- BATTERY TELEMETRY BLOCK ---
-            print("====================================")
-            print("         BATTERY TELEMETRY          ")
-            print("====================================")
+                left_col.append(f"  Memory:     {memory.used_pct}% ({memory.used_gb:.2f} GB / {memory.total_gb:.2f} GB)")
+            left_col.append("")
 
+            # Battery
+            left_col.append("BATTERY")
             if battery_error is not None:
-                print(f"Battery:                  Unavailable ({battery_error})")
+                left_col.append("  Status:     Unavailable")
             elif battery is None:
-                print("Battery:                  Not Detected (Desktop/Server)")
+                left_col.append("  Status:     Not Detected")
             else:
-                # B1: only show a countdown when we actually have one.
-                if (
-                    battery.status == "Discharging"
-                    and battery.hours_left is not None
-                    and battery.hours_left > 0
-                ):
-                    hours = int(battery.hours_left)
-                    minutes = int((battery.hours_left - hours) * 60)
-                    time_str = f"{hours}h {minutes}m remaining"
+                left_col.append(f"  Status:     {battery.status}")
+                cap_str = f"{battery.capacity}%" if battery.capacity is not None else "N/A"
+                health_str = f"{battery.health_percent:.1f}%" if battery.health_percent is not None and battery.health_percent > 0 else "N/A"
+                left_col.append(f"  Capacity:   {cap_str}  (Health: {health_str})")
+                
+                draw_str = f"{battery.power_watts:.2f} W" if battery.power_watts is not None and battery.power_watts > 0 else "N/A"
+                if battery.status == "Discharging" and battery.hours_left is not None and battery.hours_left > 0:
+                    hrs = int(battery.hours_left)
+                    mins = int((battery.hours_left - hrs) * 60)
+                    time_str = f"{hrs}h {mins}m remaining"
                 elif battery.status in ("Charging", "Full", "Not charging") or battery.online:
                     time_str = "Wall Power (AC)"
-                elif battery.hours_left is not None:
-                    time_str = "Calculating..."
                 else:
                     time_str = "N/A"
+                left_col.append(f"  Power:      {draw_str}")
+                left_col.append(f"  Time Est:   {time_str}")
+            left_col.append("")
 
-                # B9: None means "not reported by this driver".
-                if battery.health_percent is None or battery.health_percent <= 0:
-                    health_str = "N/A"
-                elif fallback_active and battery.health_percent == 100.0:
-                    health_str = "N/A (OS Wrapper Restriction)"
-                else:
-                    health_str = f"{battery.health_percent:.1f}%"
-
-                if battery.power_watts is None or battery.power_watts <= 0:
-                    draw_str = "N/A"
-                else:
-                    draw_str = f"{battery.power_watts:.3f} W"
-
-                capacity_str = (
-                    f"{battery.capacity}%" if battery.capacity is not None else "N/A"
-                )
-
-                print(f"Status:                   {battery.status}")
-                print(f"Capacity:                 {capacity_str}")
-                print(f"Power Draw:               {draw_str}")
-                print(f"Time Estimate:            {time_str}")
-                print(f"Battery Health:           {health_str}")
-
-            # --- THERMAL TELEMETRY BLOCK ---
-            print("====================================")
-            print("         THERMAL TELEMETRY          ")
-            print("====================================")
-
+            # Thermal
+            left_col.append("THERMAL & GPU")
             if thermal is None:
-                print(f"Thermal:                  Unavailable ({thermal_error})")
+                left_col.append("  Status:     Unavailable")
             else:
                 if thermal.sensor_available:
-                    print(f"CPU Vendor:               {thermal.cpu_vendor}")
-                    print(f"Motherboard:              {thermal.board_vendor}")
-                    
                     cpu_t = f"{thermal.cpu_temp}°C" if thermal.cpu_temp is not None else "N/A"
                     cpu_m = f"{thermal.cpu_temp_max}°C" if thermal.cpu_temp_max is not None else "N/A"
-                    print(f"CPU Temp:                 {cpu_t} (Max: {cpu_m})")
+                    left_col.append(f"  CPU Temp:   {cpu_t} (Max: {cpu_m})")
                     
                     if thermal.system_fans:
                         for fan, rpm in thermal.system_fans.items():
-                            print(f"{fan.capitalize()}:                  {rpm} RPM")
-                    else:
-                        print("System Fans:              N/A")
+                            left_col.append(f"  {fan.capitalize()}:{' ' * (10 - len(fan))} {rpm} RPM")
                 else:
-                    print(f"Sensor Error:             {thermal.sensor_error}")
+                    left_col.append(f"  Sensor:     {thermal.sensor_error}")
 
                 if thermal.gpu_available:
                     if thermal.gpus:
                         for gpu in thermal.gpus:
-                            g_name = gpu.name
-                            g_temp = gpu.temperature_c
-                            g_util = gpu.utilization_pct
-                            g_watt = gpu.power_w
-                            g_fan  = gpu.fan_speed_pct
-
-                            temp_str = f"{g_temp}°C" if g_temp is not None else "N/A"
-                            util_str = f"{g_util}%" if g_util is not None else "N/A"
-                            watt_str = f"{g_watt} W" if g_watt is not None else "N/A"
-                            fan_str  = f"{g_fan}%"  if g_fan  is not None else "N/A (EC Owned)"
-
-                            print(f"GPU [{gpu.index}]:                 {g_name}")
-                            print(f"  Temp / Util:            {temp_str} / {util_str}")
-                            print(f"  Power Draw:             {watt_str}")
-                            print(f"  Fan Speed:              {fan_str}")
+                            temp = f"{gpu.temperature_c}°C" if gpu.temperature_c is not None else "N/A"
+                            util = f"{gpu.utilization_pct}%" if gpu.utilization_pct is not None else "N/A"
+                            watt = f"{gpu.power_w}W" if gpu.power_w is not None else "N/A"
+                            left_col.append(f"  GPU [{gpu.index}]:     {gpu.name}")
+                            left_col.append(f"    {temp} | {util} | {watt}")
                     else:
-                        print(f"GPU Temp:                 {thermal.gpu_temp if thermal.gpu_temp is not None else 'N/A'}")
-                        print(f"GPU Fan:                  {thermal.gpu_fan if thermal.gpu_fan is not None else 'N/A'}")
-                        print(f"GPU Usage:                {thermal.gpu_usage if thermal.gpu_usage is not None else 'N/A'}")
-                        print(f"GPU Power:                {thermal.gpu_power_watts if thermal.gpu_power_watts is not None else 'N/A'}")
+                        left_col.append("  GPU:        N/A")
                 else:
-                    print(f"GPU Status:               {thermal.gpu_error}. Check If you are using ECO mode.")
-                
-            # --- DISK TELEMETRY BLOCK ---
-            print("====================================")
-            print("          DISK TELEMETRY            ")
-            print("====================================")
+                    left_col.append("  GPU:        Unavailable (ECO/Driver)")
 
+
+            # ==========================================
+            # RIGHT COLUMN (I/O & Network)
+            # ==========================================
+            right_col.append("I/O & NETWORK")
+            right_col.append("─────────────────────────────")
+            right_col.append("")
+
+            # Disk Space
+            right_col.append("DISK SPACE")
             if disk_space_error is not None:
-                print(f"Disk Space:               Unavailable ({disk_space_error})")
+                right_col.append("  Status:     Unavailable")
             elif disk_space is not None:
-                print(f"Total Space:              {disk_space.total_gb} GB")
-                print(f"Used Space:               {disk_space.used_gb} GB")
-                print(f"Free Space:               {disk_space.free_gb} GB")
-                print(f"Disk Usage Percentage:    {disk_space.percent}%")
-            
-            print("------------------------------------")
+                right_col.append(f"  Total:      {disk_space.total_gb} GB")
+                right_col.append(f"  Used:       {disk_space.used_gb} GB  ({disk_space.percent}%)")
+                right_col.append(f"  Free:       {disk_space.free_gb} GB")
+            right_col.append("")
 
+            # Disk I/O
+            right_col.append("DISK I/O")
             if disk_io_error is not None:
-                print(f"Disk I/O:                 Unavailable ({disk_io_error})")
+                right_col.append("  Status:     Unavailable")
             elif disk_io is not None:
                 if not disk_io:
-                    print("Disk I/O:                 Initializing... (Requires 1s delta)")
+                    right_col.append("  Status:     Initializing (1s delta)")
                 else:
                     for io in disk_io:
-                        print(f"{io.device}:")
-                        print(f"  Read Speed:             {io.read_mbps} MB/s")
-                        print(f"  Write Speed:            {io.write_mbps} MB/s")
+                        right_col.append(f"  {io.device}:")
+                        right_col.append(f"    Read:  {io.read_mbps} MB/s")
+                        right_col.append(f"    Write: {io.write_mbps} MB/s")
+            right_col.append("")
 
-
-            print("====================================")
-            print("         NETWORK TELEMETRY          ")
-            print("====================================")
-
+            # Network
+            right_col.append("NETWORK")
             if network_error is not None:
-                print(f"Network Telemetry:        Unavailable ({network_error})")
+                right_col.append("  Status:     Unavailable")
             elif network_data is not None:
                 if not network_data:
-                    print("Network Telemetry:        Initializing... (Requires 1s delta)")
+                    right_col.append("  Status:     Initializing (1s delta)")
                 else:
                     for item in network_data:
-                        print(f"{item.interface}:")
-                        print(f"  Status:                 {item.status}")
-
+                        right_col.append(f"  {item.interface} ({item.status})")
                         if item.status == "CONNECTED":
-                            print(f"  Download Speed:         {format_speed_bits(item.download_bps)}")
-                            print(f"  Upload Speed:           {format_speed_bits(item.upload_bps)}")
-                            print(f"  Rx Errors/Drops:        {item.rx_errors}/{item.rx_drops}")
-                            print(f"  Tx Errors/Drops:        {item.tx_errors}/{item.tx_drops}")
-                            print(f"  Total Transferred:      {format_total_data(item.total_bytes)}")
+                            down = format_speed_bits(item.download_bps)
+                            up = format_speed_bits(item.upload_bps)
+                            right_col.append(f"    ↓ {down} | ↑ {up}")
+                            right_col.append(f"    Rx Err/Drop: {item.rx_errors} / {item.rx_drops}")
+                            right_col.append(f"    Tx Err/Drop: {item.tx_errors} / {item.tx_drops}")
+                            right_col.append(f"    Total Data:  {format_total_data(item.total_bytes)}")
                         elif item.status == "CONNECTING":
-                            print("  Network Activity:       Initializing new interface link...")
-                            print(f"  Total Historical Data:  {format_total_data(item.total_gb)}")
+                            right_col.append("    Initializing link...")
+                            right_col.append(f"    Total Data:  {format_total_data(item.total_gb)}")
                         else:
-                            print("  Network Activity:       Offline / Unplugged")
-                
-            print("====================================") 
-            print("\nPress Ctrl+C to exit.")
+                            right_col.append("    Offline / Unplugged")
+                        right_col.append("") 
+
+            # ==========================================
+            # PRINT EVERYTHING
+            # ==========================================
+            print_side_by_side(left_col, right_col)
+            
+            print("\n Press Ctrl+C to exit.")
             
             time.sleep(1)
             
     except KeyboardInterrupt:
         print("\nProgram interrupted. Exiting gracefully.")
+
 
 if __name__ == "__main__":
     main()
