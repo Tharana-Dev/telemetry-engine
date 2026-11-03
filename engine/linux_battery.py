@@ -5,16 +5,42 @@ import os
 class LinuxBatterySampler:
     def __init__(self, sys_path: str | None = "/sys/class/power_supply/") -> None:
         self.main_path = sys_path
+        self.battery_path: str | None = None
+        self.ac_path: str | None = None
 
         if not os.path.isdir(self.main_path):
-            self.battery_path = None
             return
 
-        # Look for the first battery and AC adapter entries. Some machines
-        # don't expose an AC adapter at all (odd VMs, desktops), so we keep
-        # those paths as None instead of assuming they exist.
-        bat_folders = [f for f in sorted(os.listdir(self.main_path)) if f.startswith('BAT')]
-        ac_folders = [f for f in sorted(os.listdir(self.main_path)) if f.startswith('AC')]
+        # B6: listing the directory can raise PermissionError (e.g. inside
+        # a strict container).
+        try:
+            entries = sorted(os.listdir(self.main_path))
+        except (PermissionError, OSError):
+            return
+
+        # B8: read the `type` file inside each folder instead of relying on
+        # the name prefix. USB-C chargers show up as e.g. ucsi-source-psy-*
+        # rather than AC*, and some machines expose more than one battery.
+        bat_folders: list[str] = []
+        ac_folders: list[str] = []
+        for name in entries:
+            folder = os.path.join(self.main_path, name)
+            if not os.path.isdir(folder):
+                continue
+            type_val = self._read_val("type", base_path=folder)
+            if type_val == "Battery":
+                bat_folders.append(name)
+            elif type_val == "Mains":
+                ac_folders.append(name)
+
+        # Fall back to name matching if the type files were missing.
+        if not bat_folders:
+            bat_folders = [f for f in entries if "BAT" in f]
+        if not ac_folders:
+            ac_folders = [
+                f for f in entries
+                if f.startswith("AC") or f.startswith("ADP") or "ucsi" in f
+            ]
 
         self.battery_path = os.path.join(self.main_path, bat_folders[0]) if bat_folders else None
         self.ac_path = os.path.join(self.main_path, ac_folders[0]) if ac_folders else None
@@ -29,10 +55,20 @@ class LinuxBatterySampler:
         # Figure out whether we're running on wall power. If there's an AC
         # adapter, trust its "online" file. Otherwise infer from the battery
         # status — some systems have no AC entry at all.
-        if self.ac_path is not None:
-            online = self._read_val("online", base_path=self.ac_path) == "1"
+        #
+        # B4/B7: fall back to status inference when there's no AC folder
+        # *or* the AC "online" file is unreadable; include "Not charging"
+        # so a charge-limited battery on wall power isn't misreported as
+        # offline.
+        ac_val = (
+            self._read_val("online", base_path=self.ac_path)
+            if self.ac_path is not None
+            else None
+        )
+        if ac_val is not None:
+            online = ac_val == "1"
         else:
-            online = status in ("Charging", "Full")
+            online = status in ("Charging", "Full", "Not charging")
 
         # B9: missing capacity is None, not 0 (0% would look like a dead battery).
         capacity = self._read_int("capacity")
@@ -64,15 +100,22 @@ class LinuxBatterySampler:
             if status == "Discharging" and power_watts is not None and power_watts > 0:
                 hours_left = round(energy_now_converted / power_watts, 2)
         else:
-            # Charge-based fallback. µAh / µA = hours — no voltage needed.
+            # Charge-based fallback. µAh / µA = hours — no voltage needed
+            # for hours_left.
             charge_now = self._read_int("charge_now")
             current = self._read_int("current_now")
+            voltage = self._read_int("voltage_now")
+
             if charge_now is not None and current is not None:
                 current_abs = abs(current)
                 # B1: again, gate on actual discharging state.
                 if status == "Discharging" and current_abs > 0:
                     hours_left = round(charge_now / current_abs, 2)
-            # power_watts stays None — no voltage available to compute watts.
+
+            # B3: if voltage_now is available, report power too.
+            # µA * µV = pW -> W.
+            if current is not None and voltage is not None:
+                power_watts = abs(current * voltage) / 1_000_000_000_000
 
         # B9: health is None if either capacity figure is missing; do not
         # pretend the battery is at 100% health.
@@ -97,7 +140,7 @@ class LinuxBatterySampler:
             hours_left=hours_left,
             health_percent=health_percent,
         )
-        
+
     def _read_val(self, filename: str, base_path: str | None = None) -> str | None:
         # Default base is the battery folder. Callers can pass an override
         # to read from the AC folder (for the "online" file).

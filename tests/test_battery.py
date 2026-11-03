@@ -12,18 +12,25 @@ def _write(path, value):
     path.write_text(str(value))
 
 
-def _make_bat(tmp_path, fields: dict, name="BAT0"):
+def _make_bat(tmp_path, fields: dict, name="BAT0", with_type=True):
     bat = tmp_path / name
     bat.mkdir()
+    if with_type:
+        # B8: real sysfs always exposes a `type` file. Emit it by default so
+        # the type-based detection path is what most tests exercise.
+        _write(bat / "type", "Battery")
     for k, v in fields.items():
         _write(bat / k, v)
     return bat
 
 
-def _make_ac(tmp_path, online="0", name="AC"):
+def _make_ac(tmp_path, online="0", name="AC", with_type=True):
     ac = tmp_path / name
     ac.mkdir()
-    _write(ac / "online", online)
+    if with_type:
+        _write(ac / "type", "Mains")
+    if online is not None:
+        _write(ac / "online", online)
     return ac
 
 
@@ -67,6 +74,7 @@ def test_battery_charge_fallback(tmp_path):
             "current_now": "1000000",         # µA  -> 1 A
             "charge_full": "4000000",         # 4 Ah
             "charge_full_design": "5000000",  # 5 Ah
+            # NOTE: no voltage_now -> B3 cannot derive watts.
         },
     )
     _make_ac(tmp_path, online="0")
@@ -78,7 +86,7 @@ def test_battery_charge_fallback(tmp_path):
     assert snapshot.status == "Discharging"
     assert snapshot.hours_left == pytest.approx(3.0, abs=0.01)   # 3 Ah / 1 A
     assert snapshot.health_percent == pytest.approx(80.0, abs=0.1)
-    # B9: charge-based path never derives watts (no voltage file read).
+    # B3: without voltage_now there's nothing to derive watts from.
     assert snapshot.power_watts is None
 
 
@@ -103,12 +111,7 @@ def test_linux_desktop_fallback_empty_dir(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_b1_charging_status_suppresses_hours_left_despite_online_false(tmp_path):
-    """USB-C quirk: status=Charging while AC reports online=0.
-
-    Pre-B1 code gated on `not online`, so it would compute hours_left here
-    (i.e. show "3h 20m remaining" on a charging battery). The gate must be
-    on `status`, not `online`.
-    """
+    """USB-C quirk: status=Charging while AC reports online=0."""
     _make_bat(
         tmp_path,
         {
@@ -122,14 +125,12 @@ def test_b1_charging_status_suppresses_hours_left_despite_online_false(tmp_path)
     snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
 
     assert snap.status == "Charging"
-    assert snap.online is False           # we read the AC file verbatim
-    # Would be 10.0 pre-B1; must be None now.
+    assert snap.online is False
     assert snap.hours_left is None
 
 
 @pytest.mark.parametrize("status", ["Full", "Not charging", "Unknown"])
 def test_b1_non_discharging_statuses_have_no_hours_left(tmp_path, status):
-    """Any status other than 'Discharging' must suppress hours_left."""
     _make_bat(
         tmp_path,
         {
@@ -147,11 +148,6 @@ def test_b1_non_discharging_statuses_have_no_hours_left(tmp_path, status):
 
 
 def test_b1_discharging_status_still_computes_hours_left_when_online(tmp_path):
-    """Dual edge of B1: status=Discharging but AC says online=1.
-
-    Pre-B1 code gated on `not online`, so it would *skip* hours_left here.
-    The gate is on status, so we now compute it — `online` is orthogonal.
-    """
     _make_bat(
         tmp_path,
         {
@@ -170,7 +166,6 @@ def test_b1_discharging_status_still_computes_hours_left_when_online(tmp_path):
 
 
 def test_b1_charge_fallback_respects_status_gate(tmp_path):
-    """B1 applies to the charge-based fallback path too."""
     _make_bat(
         tmp_path,
         {
@@ -183,7 +178,6 @@ def test_b1_charge_fallback_respects_status_gate(tmp_path):
 
     snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
 
-    # Pre-B1 (not online) would be 3.0 h; must be None.
     assert snap.hours_left is None
 
 
@@ -192,7 +186,6 @@ def test_b1_charge_fallback_respects_status_gate(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_b2_negative_power_now_reports_positive_watts(tmp_path):
-    """Some drivers emit negative power_now while discharging."""
     _make_bat(
         tmp_path,
         {
@@ -206,12 +199,10 @@ def test_b2_negative_power_now_reports_positive_watts(tmp_path):
     snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
 
     assert snap.power_watts == pytest.approx(10.0)
-    # Pre-B2: `power_watts > 0` guard fails on -10 -> hours_left stayed None.
     assert snap.hours_left == pytest.approx(5.0)
 
 
 def test_b2_negative_current_in_charge_fallback(tmp_path):
-    """Charge path: current_now < 0 must still yield positive hours."""
     _make_bat(
         tmp_path,
         {
@@ -228,7 +219,6 @@ def test_b2_negative_current_in_charge_fallback(tmp_path):
 
 
 def test_b2_negative_current_with_voltage_derives_positive_watts(tmp_path):
-    """Energy path, no power_now: current*voltage may be negative; abs() it."""
     _make_bat(
         tmp_path,
         {
@@ -247,6 +237,191 @@ def test_b2_negative_current_with_voltage_derives_positive_watts(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# B3: charge-based path derives watts from I*V when voltage_now exists
+# ---------------------------------------------------------------------------
+
+def test_b3_charge_fallback_derives_watts_from_voltage(tmp_path):
+    """Charge battery with voltage_now -> power_watts is populated, not None."""
+    _make_bat(
+        tmp_path,
+        {
+            "status": "Discharging",
+            "charge_now": "3000000",       # 3 Ah
+            "current_now": "1000000",      # 1 A
+            "voltage_now": "12000000",     # 12 V
+        },
+    )
+    _make_ac(tmp_path, online="0")
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    # B3: 1 A * 12 V = 12 W
+    assert snap.power_watts == pytest.approx(12.0)
+    # hours_left still comes from charge/current, not from watts
+    assert snap.hours_left == pytest.approx(3.0)
+
+
+def test_b3_charge_fallback_negative_current_with_voltage_abs_watts(tmp_path):
+    _make_bat(
+        tmp_path,
+        {
+            "status": "Discharging",
+            "charge_now": "3000000",
+            "current_now": "-1000000",     # -1 A
+            "voltage_now": "12000000",     # 12 V
+        },
+    )
+    _make_ac(tmp_path, online="0")
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    assert snap.power_watts == pytest.approx(12.0)
+
+
+def test_b3_charge_fallback_without_voltage_still_none(tmp_path):
+    """Sanity: B3 only fires when voltage_now is present."""
+    _make_bat(
+        tmp_path,
+        {
+            "status": "Discharging",
+            "charge_now": "3000000",
+            "current_now": "1000000",
+        },
+    )
+    _make_ac(tmp_path, online="0")
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    assert snap.power_watts is None
+
+
+# ---------------------------------------------------------------------------
+# B4: "Not charging" (charge limit) counts as online without an AC folder
+# ---------------------------------------------------------------------------
+
+def test_b4_not_charging_counts_as_online_when_no_ac_folder(tmp_path):
+    """A battery-limited laptop on wall power: status='Not charging', no AC."""
+    _make_bat(tmp_path, {"status": "Not charging"})
+    # No AC directory.
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    assert snap.status == "Not charging"
+    assert snap.online is True     # B4: was False before
+
+
+# ---------------------------------------------------------------------------
+# B6: unreadable / non-listable sys_path must not raise
+# ---------------------------------------------------------------------------
+
+def test_b6_permission_error_on_listdir_returns_none(tmp_path, monkeypatch):
+    """Simulate a strict container: os.listdir raises PermissionError."""
+    import os as _os
+
+    real_listdir = _os.listdir
+
+    def boom(path):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    # Only break the top-level sys_path listing.
+    monkeypatch.setattr(_os, "listdir", boom)
+
+    sampler = LinuxBatterySampler(sys_path=str(tmp_path))
+    assert sampler.battery_path is None
+    assert sampler.ac_path is None
+    assert sampler.get_battery_snapshot() is None
+
+    monkeypatch.setattr(_os, "listdir", real_listdir)
+
+
+# ---------------------------------------------------------------------------
+# B7: unreadable AC "online" file falls back to status inference
+# ---------------------------------------------------------------------------
+
+def test_b7_ac_online_unreadable_falls_back_to_status(tmp_path):
+    """AC folder present but the 'online' file is missing -> infer from status."""
+    _make_bat(tmp_path, {"status": "Charging"})
+    _make_ac(tmp_path, online=None)   # no online file written
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    # Before B7: None == "1" -> online=False while charging.
+    assert snap.online is True
+    assert snap.status == "Charging"
+
+
+def test_b7_ac_online_unreadable_not_charging_infers_online(tmp_path):
+    """Same fallback, charge-limit case: should be online via B4/B7."""
+    _make_bat(tmp_path, {"status": "Not charging"})
+    _make_ac(tmp_path, online=None)
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    assert snap.online is True
+
+
+def test_b7_ac_online_unreadable_discharging_infers_offline(tmp_path):
+    _make_bat(tmp_path, {"status": "Discharging"})
+    _make_ac(tmp_path, online=None)
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    assert snap.online is False
+
+
+# ---------------------------------------------------------------------------
+# B8: detection via the `type` file, with name-based fallback
+# ---------------------------------------------------------------------------
+
+def test_b8_usb_c_folder_detected_via_type_file(tmp_path):
+    """USB-C charger folder name (ucsi-source-psy-*) doesn't match AC*; type does."""
+    _make_bat(tmp_path, {"status": "Charging"})
+    _make_ac(tmp_path, online="1", name="ucsi-source-psy-USBC0001", with_type=True)
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    assert snap.online is True
+
+
+def test_b8_adp_folder_detected_via_name_fallback(tmp_path):
+    """No `type` file anywhere -> name fallback still finds ADP*."""
+    _make_bat(tmp_path, {"status": "Charging"}, with_type=False)
+    _make_ac(tmp_path, online="1", name="ADP1", with_type=False)
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    assert snap.online is True
+
+
+def test_b8_battery_folder_without_bat_prefix_detected_via_type(tmp_path):
+    """A `type=Battery` folder not named BAT* is still picked up."""
+    _make_bat(tmp_path, {"capacity": "42", "status": "Discharging"}, name="CMB1")
+    _make_ac(tmp_path, online="0")
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    assert snap is not None
+    assert snap.capacity == 42
+
+
+def test_b8_type_file_takes_precedence_over_name(tmp_path):
+    """A folder named BAT0 whose type says 'Mains' is not treated as a battery."""
+    mains = tmp_path / "BAT0"
+    mains.mkdir()
+    _write(mains / "type", "Mains")
+    _write(mains / "online", "1")
+
+    # A real battery elsewhere so a snapshot is still returned.
+    _make_bat(tmp_path, {"capacity": "77", "status": "Discharging"}, name="CMB0")
+    _make_ac(tmp_path, online="0")
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    assert snap is not None
+    assert snap.capacity == 77    # came from CMB0, not the mislabeled BAT0
+
+
+# ---------------------------------------------------------------------------
 # B9: missing data -> None, not 0 / 100.0 sentinels
 # ---------------------------------------------------------------------------
 
@@ -261,7 +436,6 @@ def test_b9_missing_capacity_returns_none(tmp_path):
 
 
 def test_b9_missing_power_data_returns_none_power_watts(tmp_path):
-    """energy_now present, but no power_now / current_now -> power is None."""
     _make_bat(
         tmp_path,
         {
@@ -278,7 +452,6 @@ def test_b9_missing_power_data_returns_none_power_watts(tmp_path):
 
 
 def test_b9_missing_hours_left_data_returns_none(tmp_path):
-    """Charge path but no charge_now -> hours_left must be None, not 0."""
     _make_bat(
         tmp_path,
         {
@@ -294,7 +467,6 @@ def test_b9_missing_hours_left_data_returns_none(tmp_path):
 
 
 def test_b9_missing_health_data_returns_none(tmp_path):
-    """No energy_* and no charge_* pairs -> health is None, not 100.0."""
     _make_bat(tmp_path, {"status": "Discharging"})
     _make_ac(tmp_path, online="0")
 
@@ -308,8 +480,8 @@ def test_b9_health_uses_charge_pair_when_energy_pair_missing(tmp_path):
         tmp_path,
         {
             "status": "Discharging",
-            "charge_full": "4000000",        # 4 Ah
-            "charge_full_design": "5000000", # 5 Ah
+            "charge_full": "4000000",
+            "charge_full_design": "5000000",
         },
     )
     _make_ac(tmp_path, online="0")
@@ -320,11 +492,6 @@ def test_b9_health_uses_charge_pair_when_energy_pair_missing(tmp_path):
 
 
 def test_b9_health_none_when_only_one_of_pair_present(tmp_path):
-    """energy_full present but energy_full_design missing, no charge pair.
-
-    Documents current behaviour: the partial energy pair is discarded and,
-    with no charge pair to fall back to, health is None.
-    """
     _make_bat(
         tmp_path,
         {
@@ -340,12 +507,11 @@ def test_b9_health_none_when_only_one_of_pair_present(tmp_path):
 
 
 def test_b9_non_numeric_field_treated_as_missing(tmp_path):
-    """A garbage 'capacity' value is not a crash — it's a missing value."""
     _make_bat(
         tmp_path,
         {
             "status": "Discharging",
-            "capacity": "eighty",         # not an int
+            "capacity": "eighty",
         },
     )
     _make_ac(tmp_path, online="0")
@@ -356,7 +522,7 @@ def test_b9_non_numeric_field_treated_as_missing(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Online inference when no AC adapter is exposed
+# Online inference when no AC adapter is exposed (updated for B4)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
@@ -365,12 +531,12 @@ def test_b9_non_numeric_field_treated_as_missing(tmp_path):
         ("Charging", True),
         ("Full", True),
         ("Discharging", False),
-        ("Not charging", False),
+        ("Not charging", True),   # B4: was False before
         ("Unknown", False),
     ],
 )
 def test_no_ac_folder_infers_online_from_status(tmp_path, status, expected_online):
-    _make_bat(tmp_path, {"status": status})
+    _make_bat(tmp_path, {"status": status}, with_type=False)
     # No AC directory created.
 
     snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
@@ -414,7 +580,6 @@ def test_nonexistent_sys_path_returns_none(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_health_clamped_to_100_when_full_exceeds_design(tmp_path):
-    """Driver rounding can make full > design; report 100, not 120."""
     _make_bat(
         tmp_path,
         {
@@ -431,7 +596,6 @@ def test_health_clamped_to_100_when_full_exceeds_design(tmp_path):
 
 
 def test_health_none_when_design_capacity_is_zero(tmp_path):
-    """Guards the `edesign > 0` divide-by-zero check."""
     _make_bat(
         tmp_path,
         {
@@ -452,7 +616,6 @@ def test_health_none_when_design_capacity_is_zero(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_power_derived_from_current_and_voltage_when_power_now_missing(tmp_path):
-    """energy path without power_now must derive watts from I*V."""
     _make_bat(
         tmp_path,
         {
@@ -471,7 +634,6 @@ def test_power_derived_from_current_and_voltage_when_power_now_missing(tmp_path)
 
 
 def test_zero_power_now_yields_none_hours_left(tmp_path):
-    """power_watts == 0 would divide-by-zero; guard must yield None."""
     _make_bat(
         tmp_path,
         {
@@ -505,7 +667,6 @@ def test_zero_current_in_charge_fallback_yields_none_hours_left(tmp_path):
 
 
 def test_hours_left_rounded_to_two_decimals(tmp_path):
-    """50 Wh / 7 W = 7.142857… -> 7.14."""
     _make_bat(
         tmp_path,
         {
