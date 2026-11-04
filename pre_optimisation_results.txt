@@ -1,0 +1,412 @@
+========================================
+AUTOMATED BENCHMARK FOR: get_battery_snapshot
+========================================
+Time - Run 1 - Min: 0.4375 ms, Max: 1.9890 ms, Avg: 0.8602 ms
+Time - Run 2 - Min: 0.5723 ms, Max: 1.5240 ms, Avg: 0.8673 ms
+Time - Run 3 - Min: 0.5973 ms, Max: 1.3288 ms, Avg: 0.8053 ms
+Time - Run 4 - Min: 0.6084 ms, Max: 1.6353 ms, Avg: 0.8421 ms
+Time - Run 5 - Min: 0.5823 ms, Max: 1.5574 ms, Avg: 0.8406 ms
+Time - Run 6 - Min: 0.6002 ms, Max: 1.4498 ms, Avg: 0.8201 ms
+Time - Run 7 - Min: 0.6306 ms, Max: 1.8005 ms, Avg: 0.8722 ms
+Time - Run 8 - Min: 0.6243 ms, Max: 3.1629 ms, Avg: 0.9189 ms
+Time - Run 9 - Min: 0.5837 ms, Max: 1.2173 ms, Avg: 0.7445 ms
+Time - Run 10 - Min: 0.5729 ms, Max: 1.3026 ms, Avg: 0.7535 ms
+Time - Overall - Min: 0.4375 ms, Max: 3.1629 ms, Avg: 0.8325 ms
+
+Top Memory Allocations for get_battery_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_battery.py:173: size=118 B, count=2, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_cpu_snapshot
+========================================
+Time - Run 1 - Min: 0.0730 ms, Max: 0.3063 ms, Avg: 0.0998 ms
+Time - Run 2 - Min: 0.0768 ms, Max: 0.2833 ms, Avg: 0.1057 ms
+Time - Run 3 - Min: 0.0773 ms, Max: 0.2582 ms, Avg: 0.1132 ms
+Time - Run 4 - Min: 0.0741 ms, Max: 0.2385 ms, Avg: 0.0997 ms
+Time - Run 5 - Min: 0.0746 ms, Max: 0.2300 ms, Avg: 0.0949 ms
+Time - Run 6 - Min: 0.0738 ms, Max: 0.1877 ms, Avg: 0.0928 ms
+Time - Run 7 - Min: 0.0735 ms, Max: 0.4792 ms, Avg: 0.0996 ms
+Time - Run 8 - Min: 0.0759 ms, Max: 0.1954 ms, Avg: 0.0928 ms
+Time - Run 9 - Min: 0.0734 ms, Max: 0.1897 ms, Avg: 0.0912 ms
+Time - Run 10 - Min: 0.0756 ms, Max: 0.2028 ms, Avg: 0.0897 ms
+Time - Overall - Min: 0.0730 ms, Max: 0.4792 ms, Avg: 0.0979 ms
+
+Top Memory Allocations for get_cpu_snapshot:
+
+========================================
+AUTOMATED BENCHMARK FOR: get_disk_io_snapshot
+========================================
+Time - Run 1 - Min: 0.1690 ms, Max: 0.5737 ms, Avg: 0.2234 ms
+Time - Run 2 - Min: 0.1789 ms, Max: 0.4314 ms, Avg: 0.2225 ms
+Time - Run 3 - Min: 0.1679 ms, Max: 0.4306 ms, Avg: 0.2224 ms
+Time - Run 4 - Min: 0.1795 ms, Max: 0.9052 ms, Avg: 0.2707 ms
+Time - Run 5 - Min: 0.1793 ms, Max: 1.4174 ms, Avg: 0.2686 ms
+Time - Run 6 - Min: 0.1174 ms, Max: 1.2083 ms, Avg: 0.2779 ms
+Time - Run 7 - Min: 0.1123 ms, Max: 0.5966 ms, Avg: 0.2304 ms
+Time - Run 8 - Min: 0.1078 ms, Max: 0.6355 ms, Avg: 0.2090 ms
+Time - Run 9 - Min: 0.1054 ms, Max: 0.7747 ms, Avg: 0.2311 ms
+Time - Run 10 - Min: 0.1775 ms, Max: 0.7555 ms, Avg: 0.2551 ms
+Time - Overall - Min: 0.1054 ms, Max: 1.4174 ms, Avg: 0.2411 ms
+
+Top Memory Allocations for get_disk_io_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_disk.py:51: size=176 B, count=4, average=44 B
+  #2: /home/tharana/telemetry-engine/engine/linux_disk.py:49: size=59 B, count=1, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_disk_space_snapshot
+========================================
+Time - Run 1 - Min: 0.0084 ms, Max: 0.1342 ms, Avg: 0.0117 ms
+Time - Run 2 - Min: 0.0081 ms, Max: 0.0454 ms, Avg: 0.0095 ms
+Time - Run 3 - Min: 0.0081 ms, Max: 0.0526 ms, Avg: 0.0099 ms
+Time - Run 4 - Min: 0.0083 ms, Max: 0.0328 ms, Avg: 0.0100 ms
+Time - Run 5 - Min: 0.0082 ms, Max: 0.0599 ms, Avg: 0.0096 ms
+Time - Run 6 - Min: 0.0082 ms, Max: 0.0594 ms, Avg: 0.0101 ms
+Time - Run 7 - Min: 0.0084 ms, Max: 0.0874 ms, Avg: 0.0100 ms
+Time - Run 8 - Min: 0.0083 ms, Max: 0.0485 ms, Avg: 0.0101 ms
+Time - Run 9 - Min: 0.0084 ms, Max: 0.0486 ms, Avg: 0.0100 ms
+Time - Run 10 - Min: 0.0083 ms, Max: 0.0416 ms, Avg: 0.0106 ms
+Time - Overall - Min: 0.0081 ms, Max: 0.1342 ms, Avg: 0.0101 ms
+
+Top Memory Allocations for get_disk_space_snapshot:
+
+========================================
+AUTOMATED BENCHMARK FOR: get_memory_snapshot
+========================================
+Time - Run 1 - Min: 0.1047 ms, Max: 0.3737 ms, Avg: 0.1421 ms
+Time - Run 2 - Min: 0.0667 ms, Max: 0.4017 ms, Avg: 0.1170 ms
+Time - Run 3 - Min: 0.0779 ms, Max: 0.3383 ms, Avg: 0.1496 ms
+Time - Run 4 - Min: 0.0679 ms, Max: 0.4073 ms, Avg: 0.1293 ms
+Time - Run 5 - Min: 0.1055 ms, Max: 0.3472 ms, Avg: 0.1384 ms
+Time - Run 6 - Min: 0.0671 ms, Max: 0.4715 ms, Avg: 0.1268 ms
+Time - Run 7 - Min: 0.0630 ms, Max: 0.1577 ms, Avg: 0.0799 ms
+Time - Run 8 - Min: 0.0690 ms, Max: 0.2752 ms, Avg: 0.1360 ms
+Time - Run 9 - Min: 0.1015 ms, Max: 0.2487 ms, Avg: 0.1363 ms
+Time - Run 10 - Min: 0.1031 ms, Max: 0.2611 ms, Avg: 0.1301 ms
+Time - Overall - Min: 0.0630 ms, Max: 0.4715 ms, Avg: 0.1285 ms
+
+Top Memory Allocations for get_memory_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_memory.py:53: size=59 B, count=1, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_network_snapshot
+========================================
+Time - Run 1 - Min: 0.0787 ms, Max: 0.3117 ms, Avg: 0.1164 ms
+Time - Run 2 - Min: 0.0781 ms, Max: 0.7089 ms, Avg: 0.1282 ms
+Time - Run 3 - Min: 0.0563 ms, Max: 0.5897 ms, Avg: 0.1190 ms
+Time - Run 4 - Min: 0.0555 ms, Max: 0.5659 ms, Avg: 0.1196 ms
+Time - Run 5 - Min: 0.0766 ms, Max: 0.3322 ms, Avg: 0.0987 ms
+Time - Run 6 - Min: 0.0746 ms, Max: 0.3808 ms, Avg: 0.1090 ms
+Time - Run 7 - Min: 0.0759 ms, Max: 0.2992 ms, Avg: 0.1085 ms
+Time - Run 8 - Min: 0.0759 ms, Max: 0.5821 ms, Avg: 0.1155 ms
+Time - Run 9 - Min: 0.0752 ms, Max: 0.4489 ms, Avg: 0.1048 ms
+Time - Run 10 - Min: 0.0766 ms, Max: 0.2457 ms, Avg: 0.0964 ms
+Time - Overall - Min: 0.0555 ms, Max: 0.7089 ms, Avg: 0.1116 ms
+
+Top Memory Allocations for get_network_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_network.py:67: size=208 B, count=1, average=208 B
+  #2: /home/tharana/telemetry-engine/engine/linux_network.py:53: size=59 B, count=1, average=59 B
+  #3: /home/tharana/telemetry-engine/engine/linux_network.py:62: size=45 B, count=1, average=45 B
+
+========================================
+AUTOMATED BENCHMARK FOR: sampler_status
+========================================
+Time - Run 1 - Min: 0.0006 ms, Max: 0.0071 ms, Avg: 0.0009 ms
+Time - Run 2 - Min: 0.0006 ms, Max: 0.0017 ms, Avg: 0.0008 ms
+Time - Run 3 - Min: 0.0006 ms, Max: 0.0017 ms, Avg: 0.0009 ms
+Time - Run 4 - Min: 0.0006 ms, Max: 0.0014 ms, Avg: 0.0008 ms
+Time - Run 5 - Min: 0.0006 ms, Max: 0.0352 ms, Avg: 0.0012 ms
+Time - Run 6 - Min: 0.0006 ms, Max: 0.0019 ms, Avg: 0.0008 ms
+Time - Run 7 - Min: 0.0006 ms, Max: 0.0011 ms, Avg: 0.0008 ms
+Time - Run 8 - Min: 0.0006 ms, Max: 0.0016 ms, Avg: 0.0008 ms
+Time - Run 9 - Min: 0.0006 ms, Max: 0.0015 ms, Avg: 0.0008 ms
+Time - Run 10 - Min: 0.0006 ms, Max: 0.0012 ms, Avg: 0.0008 ms
+Time - Overall - Min: 0.0006 ms, Max: 0.0352 ms, Avg: 0.0008 ms
+
+Top Memory Allocations for sampler_status:
+tharana@DESKTOP-NNDE4D6:~/telemetry-engine$ /home/tharana/telemetry-engine/.venv/bin/python /home/tharana/telemetry-engine/benchmark.py
+
+========================================
+AUTOMATED BENCHMARK FOR: get_battery_snapshot
+========================================
+Time - Run 1 - Min: 0.5930 ms, Max: 2.6024 ms, Avg: 0.8316 ms
+Time - Run 2 - Min: 0.6270 ms, Max: 2.2115 ms, Avg: 0.9207 ms
+Time - Run 3 - Min: 0.5647 ms, Max: 3.6668 ms, Avg: 0.7951 ms
+Time - Run 4 - Min: 0.5467 ms, Max: 5.4742 ms, Avg: 0.8445 ms
+Time - Run 5 - Min: 0.5917 ms, Max: 1.9562 ms, Avg: 0.8418 ms
+Time - Run 6 - Min: 0.5603 ms, Max: 1.1582 ms, Avg: 0.7847 ms
+Time - Run 7 - Min: 0.5768 ms, Max: 2.6933 ms, Avg: 0.8971 ms
+Time - Run 8 - Min: 0.5983 ms, Max: 1.4035 ms, Avg: 0.7934 ms
+Time - Run 9 - Min: 0.5666 ms, Max: 1.3182 ms, Avg: 0.8034 ms
+Time - Run 10 - Min: 0.5544 ms, Max: 1.3383 ms, Avg: 0.7788 ms
+Time - Overall - Min: 0.5467 ms, Max: 5.4742 ms, Avg: 0.8291 ms
+Evaluation: PASS (4.58x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_battery_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_battery.py:173: size=177 B, count=3, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_cpu_snapshot
+========================================
+Time - Run 1 - Min: 0.0751 ms, Max: 0.2779 ms, Avg: 0.1001 ms
+Time - Run 2 - Min: 0.0750 ms, Max: 0.2643 ms, Avg: 0.1009 ms
+Time - Run 3 - Min: 0.0769 ms, Max: 0.2465 ms, Avg: 0.1038 ms
+Time - Run 4 - Min: 0.0757 ms, Max: 0.1831 ms, Avg: 0.0934 ms
+Time - Run 5 - Min: 0.0763 ms, Max: 0.4581 ms, Avg: 0.1121 ms
+Time - Run 6 - Min: 0.0808 ms, Max: 0.4983 ms, Avg: 0.1290 ms
+Time - Run 7 - Min: 0.0786 ms, Max: 0.2653 ms, Avg: 0.1116 ms
+Time - Run 8 - Min: 0.0783 ms, Max: 0.1932 ms, Avg: 0.1056 ms
+Time - Run 9 - Min: 0.0768 ms, Max: 0.2904 ms, Avg: 0.1013 ms
+Time - Run 10 - Min: 0.0783 ms, Max: 0.3163 ms, Avg: 0.1045 ms
+Time - Overall - Min: 0.0750 ms, Max: 0.4983 ms, Avg: 0.1062 ms
+Evaluation: PASS (35.77x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_cpu_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_cpu.py:18: size=59 B, count=1, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_disk_io_snapshot
+========================================
+Time - Run 1 - Min: 0.1647 ms, Max: 0.5283 ms, Avg: 0.2381 ms
+Time - Run 2 - Min: 0.1820 ms, Max: 0.4776 ms, Avg: 0.2480 ms
+Time - Run 3 - Min: 0.1791 ms, Max: 0.4466 ms, Avg: 0.2378 ms
+Time - Run 4 - Min: 0.1737 ms, Max: 0.4498 ms, Avg: 0.2348 ms
+Time - Run 5 - Min: 0.1757 ms, Max: 0.4424 ms, Avg: 0.2305 ms
+Time - Run 6 - Min: 0.1764 ms, Max: 0.4029 ms, Avg: 0.2250 ms
+Time - Run 7 - Min: 0.1686 ms, Max: 0.3334 ms, Avg: 0.2178 ms
+Time - Run 8 - Min: 0.1722 ms, Max: 0.3673 ms, Avg: 0.2175 ms
+Time - Run 9 - Min: 0.1760 ms, Max: 0.3635 ms, Avg: 0.2202 ms
+Time - Run 10 - Min: 0.1739 ms, Max: 0.4426 ms, Avg: 0.2112 ms
+Time - Overall - Min: 0.1647 ms, Max: 0.5283 ms, Avg: 0.2281 ms
+Evaluation: PASS (16.66x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_disk_io_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_disk.py:51: size=176 B, count=4, average=44 B
+  #2: /home/tharana/telemetry-engine/engine/linux_disk.py:49: size=118 B, count=2, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_disk_space_snapshot
+========================================
+Time - Run 1 - Min: 0.0083 ms, Max: 0.1300 ms, Avg: 0.0114 ms
+Time - Run 2 - Min: 0.0081 ms, Max: 0.0511 ms, Avg: 0.0100 ms
+Time - Run 3 - Min: 0.0082 ms, Max: 0.1015 ms, Avg: 0.0118 ms
+Time - Run 4 - Min: 0.0082 ms, Max: 0.0314 ms, Avg: 0.0094 ms
+Time - Run 5 - Min: 0.0082 ms, Max: 0.0786 ms, Avg: 0.0101 ms
+Time - Run 6 - Min: 0.0084 ms, Max: 0.0744 ms, Avg: 0.0103 ms
+Time - Run 7 - Min: 0.0081 ms, Max: 0.0520 ms, Avg: 0.0099 ms
+Time - Run 8 - Min: 0.0082 ms, Max: 0.0615 ms, Avg: 0.0101 ms
+Time - Run 9 - Min: 0.0081 ms, Max: 0.2318 ms, Avg: 0.0147 ms
+Time - Run 10 - Min: 0.0054 ms, Max: 0.1276 ms, Avg: 0.0089 ms
+Time - Overall - Min: 0.0054 ms, Max: 0.2318 ms, Avg: 0.0107 ms
+Evaluation: PASS (356.43x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_disk_space_snapshot:
+
+========================================
+AUTOMATED BENCHMARK FOR: get_memory_snapshot
+========================================
+Time - Run 1 - Min: 0.1060 ms, Max: 0.5918 ms, Avg: 0.1466 ms
+Time - Run 2 - Min: 0.1124 ms, Max: 0.4012 ms, Avg: 0.1551 ms
+Time - Run 3 - Min: 0.0740 ms, Max: 0.4754 ms, Avg: 0.1656 ms
+Time - Run 4 - Min: 0.0690 ms, Max: 0.3692 ms, Avg: 0.1368 ms
+Time - Run 5 - Min: 0.0679 ms, Max: 0.2492 ms, Avg: 0.0966 ms
+Time - Run 6 - Min: 0.1070 ms, Max: 0.5426 ms, Avg: 0.1477 ms
+Time - Run 7 - Min: 0.1026 ms, Max: 0.3550 ms, Avg: 0.1345 ms
+Time - Run 8 - Min: 0.1054 ms, Max: 0.5197 ms, Avg: 0.1353 ms
+Time - Run 9 - Min: 0.1056 ms, Max: 0.4795 ms, Avg: 0.1322 ms
+Time - Run 10 - Min: 0.1029 ms, Max: 0.3032 ms, Avg: 0.1331 ms
+Time - Overall - Min: 0.0679 ms, Max: 0.5918 ms, Avg: 0.1383 ms
+Evaluation: PASS (27.47x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_memory_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_memory.py:53: size=177 B, count=3, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_network_snapshot
+========================================
+Time - Run 1 - Min: 0.0786 ms, Max: 0.3764 ms, Avg: 0.1103 ms
+Time - Run 2 - Min: 0.0741 ms, Max: 0.5083 ms, Avg: 0.1151 ms
+Time - Run 3 - Min: 0.0794 ms, Max: 0.6103 ms, Avg: 0.1196 ms
+Time - Run 4 - Min: 0.0734 ms, Max: 0.4437 ms, Avg: 0.1001 ms
+Time - Run 5 - Min: 0.0736 ms, Max: 0.4928 ms, Avg: 0.1020 ms
+Time - Run 6 - Min: 0.0754 ms, Max: 0.2800 ms, Avg: 0.0942 ms
+Time - Run 7 - Min: 0.0733 ms, Max: 0.2201 ms, Avg: 0.0911 ms
+Time - Run 8 - Min: 0.0529 ms, Max: 0.5413 ms, Avg: 0.1007 ms
+Time - Run 9 - Min: 0.0549 ms, Max: 0.3052 ms, Avg: 0.1059 ms
+Time - Run 10 - Min: 0.0749 ms, Max: 0.2216 ms, Avg: 0.0991 ms
+Time - Overall - Min: 0.0529 ms, Max: 0.6103 ms, Avg: 0.1038 ms
+Evaluation: PASS (36.61x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_network_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_network.py:67: size=208 B,count=1, average=208 B
+  #2: /home/tharana/telemetry-engine/engine/linux_network.py:53: size=177 B,count=3, average=59 B
+  #3: /home/tharana/telemetry-engine/engine/linux_network.py:62: size=45 B, count=1, average=45 B
+
+========================================
+AUTOMATED BENCHMARK FOR: sampler_status
+========================================
+Time - Run 1 - Min: 0.0006 ms, Max: 0.0086 ms, Avg: 0.0008 ms
+Time - Run 2 - Min: 0.0005 ms, Max: 0.0017 ms, Avg: 0.0008 ms
+Time - Run 3 - Min: 0.0006 ms, Max: 0.0015 ms, Avg: 0.0008 ms
+Time - Run 4 - Min: 0.0006 ms, Max: 0.0326 ms, Avg: 0.0011 ms
+Time - Run 5 - Min: 0.0006 ms, Max: 0.0013 ms, Avg: 0.0008 ms
+Time - Run 6 - Min: 0.0006 ms, Max: 0.0016 ms, Avg: 0.0008 ms
+Time - Run 7 - Min: 0.0005 ms, Max: 0.0017 ms, Avg: 0.0008 ms
+Time - Run 8 - Min: 0.0006 ms, Max: 0.0013 ms, Avg: 0.0008 ms
+Time - Run 9 - Min: 0.0006 ms, Max: 0.0015 ms, Avg: 0.0008 ms
+Time - Run 10 - Min: 0.0006 ms, Max: 0.0013 ms, Avg: 0.0007 ms
+Time - Overall - Min: 0.0005 ms, Max: 0.0326 ms, Avg: 0.0008 ms
+Evaluation: PASS (4674.60x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for sampler_status:
+tharana@DESKTOP-NNDE4D6:~/telemetry-engine$ /home/tharana/telemetry-engine/.venv/bin/python /home/tharana/telemetry-engine/benchmark.py
+
+========================================
+AUTOMATED BENCHMARK FOR: get_battery_snapshot
+========================================
+Time - Run 1 - Min: 0.4830 ms, Max: 1.6861 ms, Avg: 0.8330 ms
+Time - Run 2 - Min: 0.6336 ms, Max: 2.0603 ms, Avg: 0.8913 ms
+Time - Run 3 - Min: 0.5923 ms, Max: 1.3353 ms, Avg: 0.7665 ms
+Time - Run 4 - Min: 0.6382 ms, Max: 1.3090 ms, Avg: 0.8365 ms
+Time - Run 5 - Min: 0.5595 ms, Max: 1.4061 ms, Avg: 0.7941 ms
+Time - Run 6 - Min: 0.5399 ms, Max: 2.7017 ms, Avg: 0.7560 ms
+Time - Run 7 - Min: 0.5081 ms, Max: 1.6199 ms, Avg: 0.8666 ms
+Time - Run 8 - Min: 0.6265 ms, Max: 1.7229 ms, Avg: 0.8889 ms
+Time - Run 9 - Min: 0.6124 ms, Max: 1.6850 ms, Avg: 0.8713 ms
+Time - Run 10 - Min: 0.5860 ms, Max: 1.4970 ms, Avg: 0.8285 ms
+Time - Overall - Min: 0.4830 ms, Max: 2.7017 ms, Avg: 0.8333 ms
+Evaluation: PASS (4.56x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_battery_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_battery.py:173: size=236 B, count=4, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_cpu_snapshot
+========================================
+Time - Run 1 - Min: 0.0776 ms, Max: 0.2447 ms, Avg: 0.0975 ms
+Time - Run 2 - Min: 0.0786 ms, Max: 0.4094 ms, Avg: 0.1200 ms
+Time - Run 3 - Min: 0.0532 ms, Max: 0.2614 ms, Avg: 0.1021 ms
+Time - Run 4 - Min: 0.0783 ms, Max: 0.3031 ms, Avg: 0.1181 ms
+Time - Run 5 - Min: 0.0807 ms, Max: 0.4512 ms, Avg: 0.1205 ms
+Time - Run 6 - Min: 0.0756 ms, Max: 0.2139 ms, Avg: 0.1005 ms
+Time - Run 7 - Min: 0.0800 ms, Max: 0.2597 ms, Avg: 0.1060 ms
+Time - Run 8 - Min: 0.0773 ms, Max: 0.2832 ms, Avg: 0.0998 ms
+Time - Run 9 - Min: 0.0769 ms, Max: 0.3387 ms, Avg: 0.0989 ms
+Time - Run 10 - Min: 0.0768 ms, Max: 0.1846 ms, Avg: 0.0925 ms
+Time - Overall - Min: 0.0532 ms, Max: 0.4512 ms, Avg: 0.1056 ms
+Evaluation: PASS (35.99x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_cpu_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_cpu.py:18: size=118 B, count=2, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_disk_io_snapshot
+========================================
+Time - Run 1 - Min: 0.1778 ms, Max: 0.4862 ms, Avg: 0.2395 ms
+Time - Run 2 - Min: 0.1735 ms, Max: 0.8030 ms, Avg: 0.2639 ms
+Time - Run 3 - Min: 0.1720 ms, Max: 0.5261 ms, Avg: 0.2392 ms
+Time - Run 4 - Min: 0.1708 ms, Max: 0.4328 ms, Avg: 0.2189 ms
+Time - Run 5 - Min: 0.1662 ms, Max: 0.5919 ms, Avg: 0.2361 ms
+Time - Run 6 - Min: 0.1697 ms, Max: 0.4703 ms, Avg: 0.2294 ms
+Time - Run 7 - Min: 0.1730 ms, Max: 0.4398 ms, Avg: 0.2243 ms
+Time - Run 8 - Min: 0.1663 ms, Max: 0.3883 ms, Avg: 0.2220 ms
+Time - Run 9 - Min: 0.1759 ms, Max: 0.5919 ms, Avg: 0.2401 ms
+Time - Run 10 - Min: 0.1710 ms, Max: 0.3635 ms, Avg: 0.2237 ms
+Time - Overall - Min: 0.1662 ms, Max: 0.8030 ms, Avg: 0.2337 ms
+Evaluation: PASS (16.26x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_disk_io_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_disk.py:51: size=176 B, count=4, average=44 B
+  #2: /home/tharana/telemetry-engine/engine/linux_disk.py:49: size=118 B, count=2, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_disk_space_snapshot
+========================================
+Time - Run 1 - Min: 0.0083 ms, Max: 0.1589 ms, Avg: 0.0119 ms
+Time - Run 2 - Min: 0.0083 ms, Max: 0.1924 ms, Avg: 0.0114 ms
+Time - Run 3 - Min: 0.0083 ms, Max: 0.0558 ms, Avg: 0.0098 ms
+Time - Run 4 - Min: 0.0082 ms, Max: 0.0459 ms, Avg: 0.0098 ms
+Time - Run 5 - Min: 0.0081 ms, Max: 0.0418 ms, Avg: 0.0095 ms
+Time - Run 6 - Min: 0.0081 ms, Max: 0.0496 ms, Avg: 0.0099 ms
+Time - Run 7 - Min: 0.0083 ms, Max: 0.0522 ms, Avg: 0.0102 ms
+Time - Run 8 - Min: 0.0081 ms, Max: 0.0540 ms, Avg: 0.0101 ms
+Time - Run 9 - Min: 0.0081 ms, Max: 0.1407 ms, Avg: 0.0113 ms
+Time - Run 10 - Min: 0.0080 ms, Max: 0.0973 ms, Avg: 0.0101 ms
+Time - Overall - Min: 0.0080 ms, Max: 0.1924 ms, Avg: 0.0104 ms
+Evaluation: PASS (364.82x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_disk_space_snapshot:
+
+========================================
+AUTOMATED BENCHMARK FOR: get_memory_snapshot
+========================================
+Time - Run 1 - Min: 0.1095 ms, Max: 0.3990 ms, Avg: 0.1471 ms
+Time - Run 2 - Min: 0.0871 ms, Max: 0.3613 ms, Avg: 0.1426 ms
+Time - Run 3 - Min: 0.1102 ms, Max: 0.3512 ms, Avg: 0.1494 ms
+Time - Run 4 - Min: 0.1063 ms, Max: 0.2845 ms, Avg: 0.1378 ms
+Time - Run 5 - Min: 0.1082 ms, Max: 0.2955 ms, Avg: 0.1390 ms
+Time - Run 6 - Min: 0.1051 ms, Max: 0.3907 ms, Avg: 0.1403 ms
+Time - Run 7 - Min: 0.1052 ms, Max: 0.2392 ms, Avg: 0.1253 ms
+Time - Run 8 - Min: 0.1051 ms, Max: 0.2133 ms, Avg: 0.1234 ms
+Time - Run 9 - Min: 0.1047 ms, Max: 0.2175 ms, Avg: 0.1275 ms
+Time - Run 10 - Min: 0.1021 ms, Max: 0.1929 ms, Avg: 0.1216 ms
+Time - Overall - Min: 0.0871 ms, Max: 0.3990 ms, Avg: 0.1354 ms
+Evaluation: PASS (28.06x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_memory_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_memory.py:53: size=1829 B,count=31, average=59 B
+
+========================================
+AUTOMATED BENCHMARK FOR: get_network_snapshot
+========================================
+Time - Run 1 - Min: 0.0865 ms, Max: 0.4516 ms, Avg: 0.1310 ms
+Time - Run 2 - Min: 0.0720 ms, Max: 0.5944 ms, Avg: 0.1459 ms
+Time - Run 3 - Min: 0.0858 ms, Max: 0.6721 ms, Avg: 0.1672 ms
+Time - Run 4 - Min: 0.0823 ms, Max: 0.5332 ms, Avg: 0.1343 ms
+Time - Run 5 - Min: 0.0843 ms, Max: 0.6718 ms, Avg: 0.1331 ms
+Time - Run 6 - Min: 0.0837 ms, Max: 0.7104 ms, Avg: 0.1357 ms
+Time - Run 7 - Min: 0.0625 ms, Max: 0.6900 ms, Avg: 0.1336 ms
+Time - Run 8 - Min: 0.0674 ms, Max: 0.4216 ms, Avg: 0.1281 ms
+Time - Run 9 - Min: 0.0683 ms, Max: 0.6443 ms, Avg: 0.1248 ms
+Time - Run 10 - Min: 0.0564 ms, Max: 0.3167 ms, Avg: 0.1118 ms
+Time - Overall - Min: 0.0564 ms, Max: 0.7104 ms, Avg: 0.1345 ms
+Evaluation: PASS (28.24x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for get_network_snapshot:
+  #1: /home/tharana/telemetry-engine/engine/linux_network.py:67: size=208 B,count=1, average=208 B
+  #2: /home/tharana/telemetry-engine/engine/linux_network.py:53: size=118 B,count=2, average=59 B
+  #3: /home/tharana/telemetry-engine/engine/linux_network.py:62: size=45 B, count=1, average=45 B
+
+========================================
+AUTOMATED BENCHMARK FOR: sampler_status
+========================================
+Time - Run 1 - Min: 0.0006 ms, Max: 0.0081 ms, Avg: 0.0009 ms
+Time - Run 2 - Min: 0.0006 ms, Max: 0.0329 ms, Avg: 0.0012 ms
+Time - Run 3 - Min: 0.0006 ms, Max: 0.0013 ms, Avg: 0.0008 ms
+Time - Run 4 - Min: 0.0006 ms, Max: 0.0020 ms, Avg: 0.0008 ms
+Time - Run 5 - Min: 0.0006 ms, Max: 0.0013 ms, Avg: 0.0008 ms
+Time - Run 6 - Min: 0.0006 ms, Max: 0.0017 ms, Avg: 0.0008 ms
+Time - Run 7 - Min: 0.0006 ms, Max: 0.0014 ms, Avg: 0.0008 ms
+Time - Run 8 - Min: 0.0006 ms, Max: 0.0019 ms, Avg: 0.0009 ms
+Time - Run 9 - Min: 0.0006 ms, Max: 0.0015 ms, Avg: 0.0008 ms
+Time - Run 10 - Min: 0.0006 ms, Max: 0.0017 ms, Avg: 0.0008 ms
+Time - Overall - Min: 0.0006 ms, Max: 0.0329 ms, Avg: 0.0008 ms
+Evaluation: PASS (4534.01x FASTER than target of 3.8 ms)
+
+Top Memory Allocations for sampler_status:
+
+========================================
+AUTOMATED BENCHMARK FOR: get_thermal_snapshot
+========================================
+Time - Run 1 - Min: 36.4867 ms, Max: 1961.9847 ms, Avg: 422.2467 ms
+Time - Run 2 - Min: 34.8768 ms, Max: 50.2422 ms, Avg: 38.8177 ms
+Time - Run 3 - Min: 33.1044 ms, Max: 42.0504 ms, Avg: 37.9651 ms
+Time - Overall - Min: 33.1044 ms, Max: 1961.9847 ms, Avg: 166.3432 ms
+Evaluation: PASS (6.01x FASTER than target of 1000.0 ms)
+
+Top Memory Allocations for get_thermal_snapshot:
+  #1: /usr/lib/python3.14/subprocess.py:555: size=2760 B, count=23, average=120 B
+  #2: /usr/lib/python3.14/selectors.py:398: size=560 B, count=10, average=56B
+  #3: /usr/lib/python3.14/subprocess.py:1031: size=354 B, count=6, average=59 B
+  #4: /usr/lib/python3.14/subprocess.py:1036: size=177 B, count=3, average=59 B
+  #5: /usr/lib/python3.14/json/decoder.py:361: size=64 B, count=1, average=64 B
+

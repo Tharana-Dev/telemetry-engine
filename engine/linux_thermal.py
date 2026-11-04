@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import pynvml
 from engine.results_and_errors import Errors, InternalResult
+import time
 
 
 # ---------------------------------------------------------------------------
@@ -68,12 +69,40 @@ BOARD_LOOKUP = {
 
 class LinuxThermalSampler:
 
-    def _get_nvidia(self) -> InternalResult:
-        initialized = False
+    def __init__(self) -> None:
+        self.initialized = False
+        self._last_thermal_time = 0.0
+        self._cached_snapshot: ThermalSnapshot | None = None
+        self._nvml_init_error = None
         try:
             pynvml.nvmlInit()
-            initialized = True
+            self.initialized = True
+        except _LibraryNotFound:
+            # pynvml installed but libnvidia-ml.so is missing → no driver at all
+            self._nvml_init_error = Errors.NOT_PRESENT
+        except _DriverNotLoaded:
+            # Driver present but not loaded (crash, TCC mismatch, post-reset, ...)
+            self._nvml_init_error = Errors.BROKEN_DRIVER
+        except pynvml.NVMLError:
+            self._nvml_init_error = Errors.PYNVML_ERROR
+        except Exception:
+            # Final safety net: a patched nvmlInit that raises RuntimeError, etc.
+            self._nvml_init_error = Errors.UNKNOWN
 
+    def __del__(self):
+        if self.initialized:
+            try:
+                pynvml.nvmlShutdown()
+            except pynvml.NVMLError:
+                pass
+
+    def _get_nvidia(self) -> InternalResult:
+        # T2: if nvmlInit() failed in __init__, surface the classified error
+        # instead of falling through to the generic handlers below.
+        if self._nvml_init_error is not None:
+            return InternalResult(error=self._nvml_init_error)
+
+        try:
             count = pynvml.nvmlDeviceGetCount()
             if count == 0:
                 return InternalResult(error=Errors.NOT_PRESENT)
@@ -84,9 +113,7 @@ class LinuxThermalSampler:
                 # ------------------------------------------------------------------
                 # T1: Per-GPU isolation. A single bad GPU (driver glitch, ECC
                 # corruption, transient NVMLError) must not abort the loop and
-                # drop the good data already collected for earlier GPUs. We
-                # catch the *base* NVMLError here — anything that escapes the
-                # inner NotSupported handles is treated as "skip this GPU."
+                # drop the good data already collected for earlier GPUs.
                 # ------------------------------------------------------------------
                 try:
                     handle = pynvml.nvmlDeviceGetHandleByIndex(i)
@@ -94,6 +121,7 @@ class LinuxThermalSampler:
                     name = pynvml.nvmlDeviceGetName(handle)
                     if isinstance(name, bytes):
                         name = name.decode("utf-8")
+
                     try:
                         temp = pynvml.nvmlDeviceGetTemperature(
                             handle, pynvml.NVML_TEMPERATURE_GPU
@@ -131,9 +159,6 @@ class LinuxThermalSampler:
 
                 except pynvml.NVMLError:
                     # T1: Skip this GPU; keep whatever we already collected.
-                    # Index `i` is the real NVML device index, so remaining
-                    # GPUs are still reported with their true indices (may be
-                    # non-contiguous — that's honest, not a bug).
                     continue
 
             if not gpu_records:
@@ -144,21 +169,13 @@ class LinuxThermalSampler:
             return InternalResult(data={"gpus": gpu_records})
 
         except _LibraryNotFound:
-            # pynvml installed but libnvidia-ml.so is missing → no driver at all
             return InternalResult(error=Errors.NOT_PRESENT)
         except _DriverNotLoaded:
-            # Driver present but not loaded (crash, TCC mismatch, post-reset, ...)
             return InternalResult(error=Errors.BROKEN_DRIVER)
         except pynvml.NVMLError:
             return InternalResult(error=Errors.PYNVML_ERROR)
         except Exception:
             return InternalResult(error=Errors.UNKNOWN)
-        finally:
-            if initialized:
-                try:
-                    pynvml.nvmlShutdown()
-                except pynvml.NVMLError:
-                    pass
 
     def _get_sensors(self) -> InternalResult:
         try:
@@ -196,9 +213,8 @@ class LinuxThermalSampler:
                 for search_key, vendor in BOARD_LOOKUP.items():
                     if search_key in driver_name:
                         board_vendor = vendor
-                        break  # Stop looking once found
+                        break
 
-                # 3. Extract Fans
                 for key, value in driver_data.items():
                     if key.startswith("fan"):
                         input_key = f"{key}_input"
@@ -216,10 +232,8 @@ class LinuxThermalSampler:
             return InternalResult(data=sensor_data)
 
         except FileNotFoundError:
-            # Binary missing from PATH
             return InternalResult(error=Errors.SENSORS_NOT_INSTALLED)
         except PermissionError:
-            # Binary present but not executable, or blocked by sandbox / perms
             return InternalResult(error=Errors.PERMISSION_DENIED)
         except subprocess.CalledProcessError:
             return InternalResult(error=Errors.SENSORS_ERROR)
@@ -231,6 +245,10 @@ class LinuxThermalSampler:
             return InternalResult(error=Errors.UNKNOWN)
 
     def get_thermal_snapshot(self) -> ThermalSnapshot:
+        now = time.monotonic()
+        if self._cached_snapshot is not None and (now - self._last_thermal_time) < 3.0:
+            return self._cached_snapshot
+
         gpu_data = self._get_nvidia()
         sensor_data = self._get_sensors()
 
@@ -247,36 +265,32 @@ class LinuxThermalSampler:
         if isinstance(gpu_data.data, dict) and gpu_data.data.get("gpus"):
             gpus_list = gpu_data.data["gpus"]
         elif isinstance(gpu_data.data, dict):
-            # data present but empty → driver OK, no devices
             gpu_error = "No GPU devices found"
         else:
             gpu_error = gpu_data.error.value if gpu_data.error else "Unknown Error"
 
         # --- Handle Sensors ---
         if isinstance(sensor_data.data, dict):
-            cpu_temp = sensor_data.data.get('cpu_temp')
-            cpu_max = sensor_data.data.get('cpu_max')
+            cpu_temp = sensor_data.data.get("cpu_temp")
+            cpu_max = sensor_data.data.get("cpu_max")
 
-            # Safely convert fans to int if they exist
-            raw_fans = sensor_data.data.get('system_fans') or {}
+            raw_fans = sensor_data.data.get("system_fans") or {}
             if raw_fans:
                 system_fans = {}
                 for k, v in raw_fans.items():
                     try:
                         system_fans[k] = int(float(v))
                     except (ValueError, TypeError):
-                        pass  # Skip the fan if it's [N/A] or malformed
+                        pass
             if not system_fans:
                 system_fans = None
 
-            cpu_vendor = sensor_data.data.get('cpu_vendor', 'Unknown')
-            board_vendor = sensor_data.data.get('board_vendor', 'Unknown')
+            cpu_vendor = sensor_data.data.get("cpu_vendor", "Unknown")
+            board_vendor = sensor_data.data.get("board_vendor", "Unknown")
         else:
             sensor_error = sensor_data.error.value if sensor_data.error else "Unknown Error"
 
-        # The dataclass's __post_init__ will automatically map the legacy single-GPU
-        # properties (gpu_temp, gpu_fan, etc.) from the first item in this gpus list.
-        return ThermalSnapshot(
+        snapshot = ThermalSnapshot(
             cpu_temp=cpu_temp,
             cpu_temp_max=cpu_max,
             system_fans=system_fans,
@@ -288,3 +302,7 @@ class LinuxThermalSampler:
             gpu_error=gpu_error,
             sensor_error=sensor_error
         )
+
+        self._cached_snapshot = snapshot
+        self._last_thermal_time = now
+        return snapshot

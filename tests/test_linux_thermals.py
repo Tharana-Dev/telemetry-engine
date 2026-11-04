@@ -1,17 +1,21 @@
-from unittest.mock import patch, MagicMock
-import subprocess
-from engine.linux_thermal import LinuxThermalSampler
-from engine.results_and_errors import Errors
 import json
+import subprocess
+from unittest.mock import patch, MagicMock
+
 import pynvml
 
+from engine.linux_thermal import (
+    LinuxThermalSampler,
+    _DriverNotLoaded,
+    _LibraryNotFound,
+)
+from engine.models import GpuInfo
+from engine.results_and_errors import Errors, InternalResult
 
-# Pylance's pynvml stubs don't know about NVMLError_LibraryNotFound, but the
-# runtime module does define it. getattr() returns Any, so the type checker
-# stops complaining, and the fallback to NVMLError keeps the test valid even
-# if a future pynvml version removes the name.
-_LibraryNotFound = getattr(pynvml, "NVMLError_LibraryNotFound", pynvml.NVMLError)
 
+# ----------------------------------------------------------------
+# Fixtures / helpers
+# ----------------------------------------------------------------
 
 mock_sensors_thinkpad = """
 {
@@ -69,8 +73,68 @@ class FakeCompletedProcess:
         self.stdout = stdout
 
 
+def _sensor_data(
+    cpu_temp=50.0,
+    cpu_max=80.0,
+    fans=None,
+    cpu_vendor="Intel",
+    board_vendor="Unknown",
+):
+    return InternalResult(data={
+        "cpu_temp": cpu_temp,
+        "cpu_max": cpu_max,
+        "system_fans": fans or {},
+        "cpu_vendor": cpu_vendor,
+        "board_vendor": board_vendor,
+    })
+
+
 # ----------------------------------------------------------------
-# NVIDIA (pynvml) tests
+# NVML init classification (new — verifies the __init__ refactor)
+# ----------------------------------------------------------------
+
+def test_nvml_init_success_state():
+    with patch("pynvml.nvmlInit"), patch("pynvml.nvmlShutdown"):
+        sampler = LinuxThermalSampler()
+
+    assert sampler._nvml_init_error is None
+    assert sampler.initialized is True
+
+
+def test_nvml_init_library_not_found_state():
+    with patch("pynvml.nvmlInit", side_effect=_LibraryNotFound):
+        sampler = LinuxThermalSampler()
+
+    assert sampler._nvml_init_error == Errors.NOT_PRESENT
+    assert sampler.initialized is False
+
+
+def test_nvml_init_driver_not_loaded_state():
+    with patch("pynvml.nvmlInit", side_effect=_DriverNotLoaded):
+        sampler = LinuxThermalSampler()
+
+    assert sampler._nvml_init_error == Errors.BROKEN_DRIVER
+    assert sampler.initialized is False
+
+
+def test_nvml_init_generic_nvml_error_state():
+    with patch("pynvml.nvmlInit", side_effect=pynvml.NVMLError("boom")):
+        sampler = LinuxThermalSampler()
+
+    assert sampler._nvml_init_error == Errors.PYNVML_ERROR
+    assert sampler.initialized is False
+
+
+def test_nvml_init_unknown_error_state():
+    with patch("pynvml.nvmlInit", side_effect=RuntimeError("boom")):
+        sampler = LinuxThermalSampler()
+
+    assert sampler._nvml_init_error == Errors.UNKNOWN
+    assert sampler.initialized is False
+
+
+# ----------------------------------------------------------------
+# NVIDIA happy-path / multi-GPU
 # ----------------------------------------------------------------
 
 def test_nvidia_happy_path():
@@ -80,7 +144,8 @@ def test_nvidia_happy_path():
          patch("pynvml.nvmlDeviceGetHandleByIndex", return_value="handle0"), \
          patch("pynvml.nvmlDeviceGetName", return_value=b"NVIDIA GeForce RTX 3080"), \
          patch("pynvml.nvmlDeviceGetTemperature", return_value=45), \
-         patch("pynvml.nvmlDeviceGetUtilizationRates", return_value=MagicMock(gpu=67)), \
+         patch("pynvml.nvmlDeviceGetUtilizationRates",
+               return_value=MagicMock(gpu=67)), \
          patch("pynvml.nvmlDeviceGetPowerUsage", return_value=150000), \
          patch("pynvml.nvmlDeviceGetFanSpeed", return_value=55):
 
@@ -107,7 +172,8 @@ def test_nvidia_multiple_gpus():
          patch("pynvml.nvmlDeviceGetHandleByIndex", side_effect=["h0", "h1"]), \
          patch("pynvml.nvmlDeviceGetName", side_effect=["GPU-A", "GPU-B"]), \
          patch("pynvml.nvmlDeviceGetTemperature", side_effect=[50, 60]), \
-         patch("pynvml.nvmlDeviceGetUtilizationRates", return_value=MagicMock(gpu=30)), \
+         patch("pynvml.nvmlDeviceGetUtilizationRates",
+               return_value=MagicMock(gpu=30)), \
          patch("pynvml.nvmlDeviceGetPowerUsage", return_value=100000), \
          patch("pynvml.nvmlDeviceGetFanSpeed", return_value=40):
 
@@ -124,6 +190,10 @@ def test_nvidia_multiple_gpus():
         assert gpus[1].temperature_c == 60
 
 
+# ----------------------------------------------------------------
+# NVIDIA per-metric NotSupported handling
+# ----------------------------------------------------------------
+
 def test_nvidia_fan_not_supported():
     # Laptop EC owns the fan; pynvml raises NotSupported, code should
     # record fan_speed_pct=None and still keep the GPU record.
@@ -133,7 +203,8 @@ def test_nvidia_fan_not_supported():
          patch("pynvml.nvmlDeviceGetHandleByIndex", return_value="handle0"), \
          patch("pynvml.nvmlDeviceGetName", return_value="Laptop GPU"), \
          patch("pynvml.nvmlDeviceGetTemperature", return_value=60), \
-         patch("pynvml.nvmlDeviceGetUtilizationRates", return_value=MagicMock(gpu=20)), \
+         patch("pynvml.nvmlDeviceGetUtilizationRates",
+               return_value=MagicMock(gpu=20)), \
          patch("pynvml.nvmlDeviceGetPowerUsage", return_value=30000), \
          patch("pynvml.nvmlDeviceGetFanSpeed",
                side_effect=pynvml.NVMLError_NotSupported):
@@ -145,7 +216,6 @@ def test_nvidia_fan_not_supported():
         gpus = result.data["gpus"]
         assert len(gpus) == 1
         assert gpus[0].fan_speed_pct is None
-        # Other metrics still populated
         assert gpus[0].temperature_c == 60
         assert gpus[0].utilization_pct == 20
         assert gpus[0].power_w == 30.0
@@ -178,6 +248,10 @@ def test_nvidia_all_metrics_not_supported():
         assert gpu.fan_speed_pct is None
 
 
+# ----------------------------------------------------------------
+# NVIDIA error classification (via _nvml_init_error early return)
+# ----------------------------------------------------------------
+
 def test_nvidia_no_gpus():
     with patch("pynvml.nvmlInit"), \
          patch("pynvml.nvmlShutdown"), \
@@ -199,6 +273,15 @@ def test_nvidia_library_not_found():
         assert result.data is None
 
 
+def test_nvidia_driver_not_loaded():
+    with patch("pynvml.nvmlInit", side_effect=_DriverNotLoaded):
+        sampler = LinuxThermalSampler()
+        result = sampler._get_nvidia()
+
+        assert result.error == Errors.BROKEN_DRIVER
+        assert result.data is None
+
+
 def test_nvidia_generic_nvml_error():
     # Pass an instance of the error, not the class itself
     with patch("pynvml.nvmlInit", side_effect=pynvml.NVMLError("Generic Error")):
@@ -211,7 +294,6 @@ def test_nvidia_generic_nvml_error():
 
 def test_nvidia_unknown_error():
     with patch("pynvml.nvmlInit", side_effect=RuntimeError("boom")):
-
         sampler = LinuxThermalSampler()
         result = sampler._get_nvidia()
 
@@ -219,8 +301,23 @@ def test_nvidia_unknown_error():
         assert result.data is None
 
 
+def test_get_nvidia_does_not_call_nvml_init():
+    """Regression: nvmlInit lives in __init__, not _get_nvidia()."""
+    with patch("pynvml.nvmlInit") as mock_init, \
+         patch("pynvml.nvmlShutdown"), \
+         patch("pynvml.nvmlDeviceGetCount", return_value=0):
+
+        sampler = LinuxThermalSampler()
+        assert mock_init.call_count == 1  # exactly once, in __init__
+
+        sampler._get_nvidia()
+        sampler._get_nvidia()
+
+        assert mock_init.call_count == 1  # _get_nvidia must not re-init
+
+
 # ----------------------------------------------------------------
-# Sensors (subprocess + lm-sensors) tests
+# Sensors (subprocess + lm-sensors)
 # ----------------------------------------------------------------
 
 def test_sensors_thinkpad():
@@ -232,6 +329,8 @@ def test_sensors_thinkpad():
 
         assert internal_data.data["cpu_vendor"] == "Intel"
         assert internal_data.data["cpu_temp"] == 65.0
+        assert internal_data.data["cpu_max"] == 80.0
+        assert internal_data.data["board_vendor"] == "Lenovo (ThinkPad)"
         assert len(internal_data.data["system_fans"]) == 2
         assert internal_data.error is None
 
@@ -267,6 +366,12 @@ def test_errors_sensors():
         assert result.error == Errors.SENSORS_NOT_INSTALLED
         assert result.data is None
 
+    # sensors not executable -> PERMISSION_DENIED
+    with patch("subprocess.run", side_effect=PermissionError):
+        result = LinuxThermalSampler()._get_sensors()
+        assert result.error == Errors.PERMISSION_DENIED
+        assert result.data is None
+
     # sensors exited non-zero -> SENSORS_ERROR
     with patch("subprocess.run",
                side_effect=subprocess.CalledProcessError(returncode=1, cmd="sensors")):
@@ -294,3 +399,77 @@ def test_errors_sensors():
         result = LinuxThermalSampler()._get_sensors()
         assert result.error == Errors.UNKNOWN
         assert result.data is None
+
+
+# ----------------------------------------------------------------
+# get_thermal_snapshot: integration + 3-second cache
+# ----------------------------------------------------------------
+
+def test_thermal_snapshot_full():
+    gpu = GpuInfo(index=0, name="RTX 3080", temperature_c=45,
+                  utilization_pct=67, power_w=150.0, fan_speed_pct=55)
+
+    with patch("pynvml.nvmlInit"), \
+         patch("pynvml.nvmlShutdown"), \
+         patch.object(LinuxThermalSampler, "_get_nvidia",
+                      return_value=InternalResult(data={"gpus": [gpu]})), \
+         patch.object(LinuxThermalSampler, "_get_sensors",
+                      return_value=_sensor_data(
+                          cpu_temp=65.0, cpu_max=80.0,
+                          fans={"fan1": 2400.0},
+                          cpu_vendor="Intel",
+                          board_vendor="Lenovo (ThinkPad)")):
+
+        snap = LinuxThermalSampler().get_thermal_snapshot()
+
+        assert snap.cpu_temp == 65.0
+        assert snap.cpu_temp_max == 80.0
+        assert snap.system_fans == {"fan1": 2400}
+        assert len(snap.gpus) == 1
+        assert snap.gpus[0].name == "RTX 3080"
+        assert snap.gpu_available is True
+        assert snap.sensor_available is True
+        assert snap.cpu_vendor == "Intel"
+        assert snap.board_vendor == "Lenovo (ThinkPad)"
+        assert snap.gpu_error is None
+        assert snap.sensor_error is None
+
+
+def test_thermal_snapshot_cache_hit():
+    """Two calls inside the 3s window must hit the cache."""
+    with patch("pynvml.nvmlInit"), \
+         patch("pynvml.nvmlShutdown"), \
+         patch.object(LinuxThermalSampler, "_get_nvidia",
+                      return_value=InternalResult(data={"gpus": []})) as mock_nv, \
+         patch.object(LinuxThermalSampler, "_get_sensors",
+                      return_value=_sensor_data()) as mock_sensors:
+
+        sampler = LinuxThermalSampler()
+        snap1 = sampler.get_thermal_snapshot()
+        snap2 = sampler.get_thermal_snapshot()
+
+        assert snap1 is snap2
+        assert mock_nv.call_count == 1
+        assert mock_sensors.call_count == 1
+
+
+def test_thermal_snapshot_cache_expiry():
+    """A call past the 3s window must re-sample."""
+    with patch("pynvml.nvmlInit"), \
+         patch("pynvml.nvmlShutdown"), \
+         patch.object(LinuxThermalSampler, "_get_nvidia",
+                      return_value=InternalResult(data={"gpus": []})) as mock_nv, \
+         patch.object(LinuxThermalSampler, "_get_sensors",
+                      return_value=_sensor_data()) as mock_sensors:
+
+        sampler = LinuxThermalSampler()
+        snap1 = sampler.get_thermal_snapshot()
+
+        # Fast-forward the cache timestamp by >3s
+        sampler._last_thermal_time -= 4.0
+
+        snap2 = sampler.get_thermal_snapshot()
+
+        assert snap1 is not snap2
+        assert mock_nv.call_count == 2
+        assert mock_sensors.call_count == 2
