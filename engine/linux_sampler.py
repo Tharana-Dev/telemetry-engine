@@ -5,6 +5,7 @@ from engine.linux_battery import LinuxBatterySampler
 from engine.linux_thermal import LinuxThermalSampler
 from engine.linux_disk import LinuxDiskSampler
 from engine.linux_network import LinuxNetworkSampler
+from engine.logger import logger
 
 class LinuxCollector(BaseSystemCollector):
     def __init__(self) -> None:
@@ -33,31 +34,37 @@ class LinuxCollector(BaseSystemCollector):
             self.cpu_sampler = LinuxCpuSampler()
         except Exception as e:
             self._cpu_init_error = e
+            logger.error(f"Initialization failed for CPU sampler: {e}")
 
         try:
             self.mem_sampler = LinuxMemorySampler()
         except Exception as e:
             self._mem_init_error = e
+            logger.error(f"Initialization failed for Memory sampler: {e}")
 
         try:
             self.battery_sampler = LinuxBatterySampler()
         except Exception as e:
             self._battery_init_error = e
+            logger.error(f"Initialization failed for Battery sampler: {e}")
 
         try:
             self.thermal_sampler = LinuxThermalSampler()
         except Exception as e:
             self._thermal_init_error = e
+            logger.error(f"Initialization failed for Thermal sampler: {e}")
 
         try:
             self.disk_sampler = LinuxDiskSampler()
         except Exception as e:
             self._disk_init_error = e
+            logger.error(f"Initialization failed for Disk sampler: {e}")
 
         try:
             self.network_sampler = LinuxNetworkSampler()
         except Exception as e:
             self._network_init_error = e
+            logger.error(f"Initialization failed for Network sampler: {e}")
 
     def _call(self, name, sampler, init_error, method_name):
         """K2: every failure mode becomes a single, self-describing exception.
@@ -70,7 +77,7 @@ class LinuxCollector(BaseSystemCollector):
         try:
             return getattr(sampler, method_name)()
         except Exception as e:
-            #TODO add loggin
+            logger.error(f"Runtime error in {name} sampler: {e}", exc_info=True)
             return None
     
     def sampler_status(self) -> dict[str, BaseException | None]:

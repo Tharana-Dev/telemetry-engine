@@ -16,3 +16,8 @@ practice/
 .DS_Store
 .vscode/
 .idea/
+
+# Log files
+telemetry.log
+*.log
+*.log.*

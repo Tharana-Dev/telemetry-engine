@@ -166,3 +166,18 @@ pytest -v
 - **Robustness Checks:** Forces edge situations including blank tracking paths, zero core totals, desktop fallbacks, bad integer parsing, and partition filtering.
 - **Fault Tolerance:** Verifies that missing tools, malformed data, and hot-unplugged interfaces return specific error states or fallbacks rather than crashing.
 - **UI Rendering:** Tests the terminal UI string generation (`print_side_by_side`) to ensure edge cases (like a CONNECTING interface) do not crash the render loop.
+
+---
+
+## 📝 Logging & Error Handling
+
+The engine uses Python's built-in `logging` module with a `RotatingFileHandler`. 
+
+- **Silent UI Boundary:** All exceptions (both at initialization and runtime) are caught by the `LinuxCollector` boundary. This ensures one broken sensor never crashes the dashboard. The UI simply displays `Unavailable` or `N/A`.
+- **The Flight Recorder:** When an exception is caught, the exact traceback and error message are written to `telemetry.log`. 
+- **Log Rotation:** The log file rotates at 1MB, keeping up to 5 historical backups (`telemetry.log.1` through `telemetry.log.5`) to prevent filling up the hard drive.
+- **Console Cleanliness:** Errors are never printed to the console. This keeps the terminal UI clean and prevents the dashboard from scrolling.
+
+To inspect the exact reason a sensor failed, open the log file:
+```bash
+cat telemetry.log
