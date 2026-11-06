@@ -193,4 +193,4 @@ def test_no_valid_interfaces_returns_empty_list(tmp_path, monkeypatch):
     assert sampler.get_network_snapshot() == []   # baseline
 
     _write(tmp_path, t)                           # same content, second tick
-    assert sampler.get_network_snapshot() == []
+    assert sampler.get_network_snapshot() is None

@@ -6,6 +6,7 @@ from engine.linux_thermal import LinuxThermalSampler
 from engine.linux_disk import LinuxDiskSampler
 from engine.linux_network import LinuxNetworkSampler
 from engine.logger import logger
+import time
 
 class LinuxCollector(BaseSystemCollector):
     def __init__(self) -> None:
@@ -29,6 +30,10 @@ class LinuxCollector(BaseSystemCollector):
         self._thermal_init_error: BaseException | None = None
         self._disk_init_error: BaseException | None = None
         self._network_init_error: BaseException | None = None
+        
+        self._runtime_errors: dict[str, BaseException] = {}
+        self._last_logged_error = None
+        self._last_log_time = 0
 
         try:
             self.cpu_sampler = LinuxCpuSampler()
@@ -67,17 +72,24 @@ class LinuxCollector(BaseSystemCollector):
             logger.error(f"Initialization failed for Network sampler: {e}")
 
     def _call(self, name, sampler, init_error, method_name):
-        """K2: every failure mode becomes a single, self-describing exception.
-
-        - Sampler never constructed  -> SamplerUnavailableError
-        - Sampler raised mid-call    -> SamplerRuntimeError (chains original)
-        """
         if sampler is None:
            return None
         try:
-            return getattr(sampler, method_name)()
+            result =  getattr(sampler, method_name)()
+            self._runtime_errors.pop(name, None)
+            return result
         except Exception as e:
-            logger.error(f"Runtime error in {name} sampler: {e}", exc_info=True)
+            error_msg = str(e)
+            current_time = time.monotonic()
+            is_duplicate = (error_msg == self._last_logged_error)
+            is_recent = (current_time - self._last_log_time < 60)
+            
+            if not (is_duplicate and is_recent):
+                logger.error(f"Runtime error in {name} sampler: {e}", exc_info=True)
+                self._last_logged_error = error_msg
+                self._last_log_time = current_time
+                
+            self._runtime_errors[name] = e
             return None
     
     def sampler_status(self) -> dict[str, BaseException | None]:
@@ -121,6 +133,8 @@ class LinuxCollector(BaseSystemCollector):
     
     def get_system_health(self) -> dict[str, str | None]:
         health: dict[str, str | None] = {}
-        for name, exc in self.sampler_status().items(): 
+        status = self.sampler_status()
+        for name in status:
+            exc = self._runtime_errors.get(name) or status[name]
             health[name] = None if exc is None else str(exc)
         return health

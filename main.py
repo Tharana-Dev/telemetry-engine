@@ -7,8 +7,15 @@ from engine.linux_sampler import LinuxCollector
 from engine.psutil_sampler import PsutilCollector
 
 
+def _fmt(value, suffix="", fallback="N/A"):
+    """Format a value with an optional suffix, defaulting to `fallback` when None."""
+    return f"{value}{suffix}" if value is not None else fallback
+
+
 def format_speed_bits(bytes_per_second):
     """Converts bytes/sec to bits/sec and formats as industry-standard Kbps or Mbps."""
+    if bytes_per_second is None or bytes_per_second < 0:
+        return "N/A"
     bits_per_second = bytes_per_second * 8
     kbps = bits_per_second / 1000
 
@@ -21,6 +28,8 @@ def format_speed_bits(bytes_per_second):
 
 def format_total_data(total_bytes):
     """Converts total cumulative bytes into binary human-readable strings."""
+    if total_bytes is None or total_bytes < 0:
+        return "N/A"
     for unit in ['Bytes', 'KB', 'MB', 'GB', 'TB']:
         if total_bytes < 1024.0:
             return f"{total_bytes:.2f} {unit}"
@@ -134,7 +143,7 @@ def gather_snapshots(data) -> dict:
 
 
 # =====================================================================
-# UI LAYER — pure rendering. Never touches `data`.
+# UI LAYER — pure rendering. Never touches `data`. Never crashes.
 # =====================================================================
 def build_dashboard(
     snapshots: dict,
@@ -142,11 +151,14 @@ def build_dashboard(
     fallback_active: bool,
     fallback_reason,
     degraded_subsystems: list[str],
+    health: dict,
 ) -> tuple[list[str], list[str]]:
     """Render both dashboard columns from a pre-gathered snapshots dict.
 
     Pure function: no sampling, no I/O, no reference to the collector.
-    Every datum shown comes from `snapshots`.
+    Every datum shown comes from `snapshots`. Missing fields render as
+    "N/A" via `_fmt` (or try/except for formatted numbers) — the dashboard
+    never raises regardless of what the engine returned.
     """
     cpu, cpu_error = snapshots["cpu"]
     memory, memory_error = snapshots["memory"]
@@ -181,27 +193,46 @@ def build_dashboard(
     if cpu is None:
         left_col.append("  CPU Usage:  Unavailable")
     else:
-        left_col.append(f"  CPU Usage:  {cpu.usage_pct}%")
+        left_col.append(f"  CPU Usage:  {_fmt(cpu.usage_pct, '%')}")
 
     if memory is None:
         left_col.append("  Memory:     Unavailable")
     else:
-        left_col.append(f"  Memory:     {memory.used_pct}% ({memory.used_gb:.2f} GB / {memory.total_gb:.2f} GB)")
+        mem_pct = _fmt(memory.used_pct, "%")
+        try:
+            mem_detail = f"{memory.used_gb:.2f} GB / {memory.total_gb:.2f} GB"
+        except (TypeError, ValueError):
+            mem_detail = "N/A"
+        left_col.append(f"  Memory:     {mem_pct} ({mem_detail})")
     left_col.append("")
 
     # Battery
     left_col.append("BATTERY")
-    if battery_error is not None:
-        left_col.append("  Status:     Unavailable")
+    if health.get("battery") is not None:
+        # Init-time failure: sampler never constructed (PermissionError on
+        # /sys/class/power_supply/, etc.)
+        left_col.append("  Status:     Unavailable (Error)")
+    elif battery_error is not None:
+        # Mid-run failure: sampler constructed OK, but get_battery_snapshot()
+        # raised on this tick.
+        left_col.append("  Status:     Unavailable (Error)")
     elif battery is None:
-        left_col.append("  Status:     Not Detected")
+        # No battery hardware at all (desktop, VM) — rule 3.
+        left_col.append("  Status:     Not Detected (No Hardware)")
     else:
-        left_col.append(f"  Status:     {battery.status}")
-        cap_str = f"{battery.capacity}%" if battery.capacity is not None else "N/A"
-        health_str = f"{battery.health_percent:.1f}%" if battery.health_percent is not None else "N/A"
+        left_col.append(f"  Status:     {_fmt(battery.status)}")
+        cap_str = _fmt(battery.capacity, "%")
+        try:
+            health_str = f"{battery.health_percent:.1f}%"
+        except (TypeError, ValueError):
+            health_str = "N/A"
         left_col.append(f"  Capacity:   {cap_str}  (Health: {health_str})")
 
-        draw_str = f"{battery.power_watts:.2f} W" if battery.power_watts is not None else "N/A"
+        try:
+            draw_str = f"{battery.power_watts:.2f} W"
+        except (TypeError, ValueError):
+            draw_str = "N/A"
+
         if battery.status == "Discharging" and battery.hours_left is not None and battery.hours_left > 0:
             hrs = int(battery.hours_left)
             mins = int((battery.hours_left - hrs) * 60)
@@ -210,6 +241,7 @@ def build_dashboard(
             time_str = "Wall Power (AC)"
         else:
             time_str = "N/A"
+
         left_col.append(f"  Power:      {draw_str}")
         left_col.append(f"  Time Est:   {time_str}")
     left_col.append("")
@@ -220,8 +252,8 @@ def build_dashboard(
         left_col.append("  Status:     Unavailable")
     else:
         if thermal.sensor_available:
-            cpu_t = f"{thermal.cpu_temp}°C" if thermal.cpu_temp is not None else "N/A"
-            cpu_m = f"{thermal.cpu_temp_max}°C" if thermal.cpu_temp_max is not None else "N/A"
+            cpu_t = _fmt(thermal.cpu_temp, "°C")
+            cpu_m = _fmt(thermal.cpu_temp_max, "°C")
             left_col.append(f"  CPU Temp:   {cpu_t} (Max: {cpu_m})")
 
             if thermal.system_fans:
@@ -233,10 +265,10 @@ def build_dashboard(
         if thermal.gpu_available:
             if thermal.gpus:
                 for gpu in thermal.gpus:
-                    temp = f"{gpu.temperature_c}°C" if gpu.temperature_c is not None else "N/A"
-                    util = f"{gpu.utilization_pct}%" if gpu.utilization_pct is not None else "N/A"
-                    watt = f"{gpu.power_w}W" if gpu.power_w is not None else "N/A"
-                    left_col.append(f"  GPU [{gpu.index}]:     {gpu.name}")
+                    temp = _fmt(gpu.temperature_c, "°C")
+                    util = _fmt(gpu.utilization_pct, "%")
+                    watt = _fmt(gpu.power_w, "W")
+                    left_col.append(f"  GPU [{_fmt(gpu.index)}]:     {_fmt(gpu.name)}")
                     left_col.append(f"    {temp} | {util} | {watt}")
             else:
                 left_col.append("  GPU:        N/A")
@@ -259,7 +291,10 @@ def build_dashboard(
             right_col.append("  Status:     Unavailable (read failed)")
         else:
             right_col.append(f"  Total:      {format_disk_size(disk_space.total_bytes)}")
-            right_col.append(f"  Used:       {format_disk_size(disk_space.used_bytes)}  ({disk_space.percent}%)")
+            right_col.append(
+                f"  Used:       {format_disk_size(disk_space.used_bytes)}  "
+                f"({_fmt(disk_space.percent, '%')})"
+            )
             right_col.append(f"  Free:       {format_disk_size(disk_space.free_bytes)}")
     right_col.append("")
 
@@ -273,7 +308,7 @@ def build_dashboard(
         right_col.append("  Status:     Initializing (1s delta)")
     else:
         for io in disk_io:
-            right_col.append(f"  {io.device}:")
+            right_col.append(f"  {_fmt(io.device)}:")
             right_col.append(f"    Read:  {format_disk_speed(io.read_bps)}")
             right_col.append(f"    Write: {format_disk_speed(io.write_bps)}")
     right_col.append("")
@@ -288,13 +323,17 @@ def build_dashboard(
         right_col.append("  Status:     Initializing (1s delta)")
     else:
         for item in network_data:
-            right_col.append(f"  {item.interface} ({item.status})")
+            right_col.append(f"  {_fmt(item.interface)} ({_fmt(item.status)})")
             if item.status == "CONNECTED":
                 down = format_speed_bits(item.download_bps)
                 up = format_speed_bits(item.upload_bps)
                 right_col.append(f"    ↓ {down} | ↑ {up}")
-                right_col.append(f"    Total Rx Err/Drop: {item.rx_errors} / {item.rx_drops}")
-                right_col.append(f"    Total Tx Err/Drop: {item.tx_errors} / {item.tx_drops}")
+                right_col.append(
+                    f"    Total Rx Err/Drop: {_fmt(item.rx_errors)} / {_fmt(item.rx_drops)}"
+                )
+                right_col.append(
+                    f"    Total Tx Err/Drop: {_fmt(item.tx_errors)} / {_fmt(item.tx_drops)}"
+                )
                 right_col.append(f"    Total Data:  {format_total_data(item.total_bytes)}")
             elif item.status == "CONNECTING":
                 right_col.append("    Initializing link...")
@@ -311,6 +350,7 @@ def main():
     fallback_active = False
     fallback_reason = None
     degraded_subsystems: list[str] = []
+    health: dict = {}
 
     if sys_type == "Linux":
         try:
@@ -321,8 +361,9 @@ def main():
             fallback_reason = type(e).__name__
         else:
             if hasattr(data, "get_system_health"):
+                health = data.get_system_health()
                 degraded_subsystems = [
-                    name for name, err in data.get_system_health().items()
+                    name for name, err in health.items()
                     if err is not None
                 ]
     else:
@@ -341,7 +382,8 @@ def main():
             snapshots = gather_snapshots(data)   # DATA — may take ~1s
             os.system(clear_command)             # UI — clear only after data ready
             left_col, right_col = build_dashboard(
-                snapshots, sys_type, fallback_active, fallback_reason, degraded_subsystems
+                snapshots, sys_type, fallback_active, fallback_reason,
+                degraded_subsystems, health,
             )                                     # UI — pure render
             print_side_by_side(left_col, right_col)
             print("\n Press Ctrl+C to exit.")

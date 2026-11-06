@@ -26,7 +26,6 @@ from main import (
     print_side_by_side,
 )
 
-
 # ===========================================================================
 # Helpers
 # ===========================================================================
@@ -396,14 +395,14 @@ def _fake_snapshots(**overrides):
 def test_build_dashboard_is_pure():
     """Same snapshots -> identical output on repeated calls."""
     snaps = _fake_snapshots()
-    a = build_dashboard(snaps, "Linux", False, None, [])
-    b = build_dashboard(snaps, "Linux", False, None, [])
+    a = build_dashboard(snaps, "Linux", False, None, [], {})
+    b = build_dashboard(snaps, "Linux", False, None, [], {})
     assert a == b
 
 
 def test_build_dashboard_renders_from_snapshots_only():
     """build_dashboard accepts a plain dict; no collector involved."""
-    left, right = build_dashboard(_fake_snapshots(), "Linux", False, None, [])
+    left, right = build_dashboard(_fake_snapshots(), "Linux", False, None, [], {})
 
     assert any("SYSTEM & HARDWARE" in line for line in left)
     assert any("42.0%" in line for line in left)
@@ -827,3 +826,25 @@ def test_main_calls_cls_on_windows():
 
     assert mock_os_sys.call_count == 2
     assert mock_os_sys.call_args[0][0] == "cls"
+    
+def test_main_battery_init_error_shows_unavailable_error(capsys):
+    """health["battery"] not None -> 'Unavailable (Error)'."""
+    collector = _make_fake_collector()
+    collector.get_system_health.return_value = {
+        "battery": "PermissionError: denied",
+    }
+    collector.get_battery_snapshot.return_value = None
+    _run_main_once(collector, system="Linux")
+
+    assert "Unavailable (Error)" in capsys.readouterr().out
+
+
+def test_main_battery_none_shows_not_detected_no_hardware(capsys):
+    """health["battery"] None + snapshot None -> 'Not Detected (No Hardware)'."""
+    collector = _make_fake_collector()
+    collector.get_system_health.return_value = {}
+    collector.get_battery_snapshot.return_value = None
+    _run_main_once(collector, system="Linux")
+
+    out = capsys.readouterr().out
+    assert "Not Detected (No Hardware)" in out

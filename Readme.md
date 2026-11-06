@@ -21,8 +21,9 @@ A high-performance, system telemetry engine written in Python. The Linux engine 
 
 - **Cross-Platform Support is a Stub:** Windows and macOS currently use a dummy `PsutilCollector`. It does not yet implement the full HAL contract for disk, network, or thermal metrics. This is the next development milestone.
 - **WSL (Windows Subsystem for Linux) Restrictions:** 
-  - **Thermal Sensors:** WSL does not pass physical motherboard sensors through to the Linux kernel.
-  - **Network:** WSL network interfaces (`eth0`) represent virtualized Hyper-V switches.
+  - **GPU Hot-Plugging:** WSL's virtualized kernel cannot dynamically map a PCIe device that was powered off during its boot sequence. If you boot WSL while the dGPU is in Eco Mode (powered off), you must run `wsl --shutdown` in Windows PowerShell and reopen WSL after switching the GPU back on. The engine will log this as `NVML init failed: Driver Not Loaded` and gracefully show `Not Detected`.
+  - **Thermal Sensors:** WSL does not pass physical motherboard sensors through to the Linux kernel. CPU and Motherboard temperatures will safely fall back to `N/A`.
+  - **Network:** WSL network interfaces (`eth0`) represent virtualized Hyper-V switches, not the physical Wi-Fi or Ethernet card.
 - **Laptop Fan Speeds:** On almost all laptops, physical fans are controlled by the motherboard's Embedded Controller (EC). `pynvml` will return `N/A` for laptop dGPU fans.
 - **Cross-Platform Thermals:** `psutil` does not expose CPU temperatures or fan speeds on Windows/macOS natively. Deep thermal telemetry is currently a Linux-only feature.
 - **Disk Space Scope:** The engine only monitors the primary root partition (`/` on Linux, `C:\` on Windows).
@@ -133,22 +134,19 @@ python3 main.py
 
 The repository includes `benchmark.py`, an automated profiling script that measures execution time (`time.perf_counter_ns`) and memory allocations (`tracemalloc`) across all samplers.
 
-```bash
-python3 benchmark.py
-```
-
 ### Optimization Results
-By moving `pynvml.nvmlInit()` to the constructor and implementing a 3-second cache on thermal reads, the most dangerous bottleneck was eliminated:
+By moving `pynvml.nvmlInit()` to the constructor and implementing a 3-second cache on thermal reads, the dangerous subprocess bottleneck was tamed:
 
-| Sampler | Pre-Optimization Avg | Post-Optimization Avg (Cached) |
+| Sampler | Cold Start (First Tick) | Steady State (Cached) |
 | :--- | :--- | :--- |
-| CPU | 0.09 ms | 0.10 ms |
-| Memory | 0.12 ms | 0.13 ms |
+| CPU | 0.10 ms | 0.10 ms |
+| Memory | 0.13 ms | 0.13 ms |
 | Disk Space | 0.01 ms | 0.01 ms |
 | Disk I/O | 0.22 ms | 0.22 ms |
-| Network | 0.11 ms | 0.17 ms |
-| **Thermal** | **166.34 ms** | **0.0008 ms** |
+| Network | 0.17 ms | 0.17 ms |
+| **Thermal** | **~1,600 ms** | **0.0008 ms** |
 
+*(Note: The cold start incurs the subprocess spawn and NVML init cost. The 3-second cache guarantees that the UI loop does not block on subsequent ticks. Every 3 seconds, a background subprocess is spawned, costing ~38ms).*
 ---
 
 ## 🧪 Testing Suite Matrix

@@ -16,9 +16,6 @@ class LinuxDiskSampler:
         self._last_time: float | None = None
 
     def _get_disk_stats(self) -> dict[str, dict[str, int]]:
-        # Fatal: if /proc/diskstats is missing or unreadable, open() raises
-        # FileNotFoundError / PermissionError and we let it bubble to
-        # LinuxCollector.
         stats: dict[str, dict[str, int]] = {}
         with open(self.diskstats_path, 'r') as f:
             for line in f:
@@ -41,7 +38,7 @@ class LinuxDiskSampler:
         # an empty list (no hardware / nothing to report).
         return stats
 
-    def get_io_snapshot(self) -> list[DiskIOSnapshot]:
+    def get_io_snapshot(self) -> list[DiskIOSnapshot] | None:
         current_time = time.monotonic()
         current_stats = self._get_disk_stats()
 
@@ -50,7 +47,10 @@ class LinuxDiskSampler:
             self._last_stats = current_stats
             self._last_time = current_time
             return []
-
+        
+        if not current_stats:
+            return None
+        
         duration = current_time - self._last_time
         if duration <= 0:
             duration = 1.0

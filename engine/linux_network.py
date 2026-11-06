@@ -51,7 +51,7 @@ class LinuxNetworkSampler:
         # that into an empty list (no hardware / nothing to report).
         return interfaces
 
-    def get_network_snapshot(self) -> list[NetworkSnapshot]:
+    def get_network_snapshot(self) -> list[NetworkSnapshot] | None:
         current_time = time.monotonic()
         current_stats = self._get_raw_stats()
 
@@ -60,6 +60,10 @@ class LinuxNetworkSampler:
             self._last_stats = current_stats
             self._last_time = current_time
             return []
+
+        # If no physical interfaces remain, return None (No Hardware).
+        if not current_stats and not self._last_stats:
+            return None
 
         snapshots: list[NetworkSnapshot] = []
         elapsed_time = max(0.001, current_time - self._last_time)

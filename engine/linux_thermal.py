@@ -3,6 +3,7 @@ import subprocess
 import json
 import pynvml
 import time
+from engine.logger import logger
 
 
 CPU_LOOKUP = {
@@ -51,12 +52,21 @@ class LinuxThermalSampler:
 
     def _get_nvidia(self) -> list[GpuInfo]:
         if not self.initialized:
-            return []
+            try:
+                pynvml.nvmlInit()
+                self.initialized = True
+            except Exception as e:
+                logger.error(f"NVML init failed: {e}")
+                return []
 
         try:
             count = pynvml.nvmlDeviceGetCount()
-        except Exception:
+        except pynvml.NVMLError as e:
+            # The driver crashed or powered off mid-session!
+            logger.error(f"NVML driver lost. Attempting to reset: {e}")
+            self.initialized = False  # <--- CRITICAL FIX: Force re-init next tick
             return []
+        # ... rest of the code
         if count == 0:
             return []
 
