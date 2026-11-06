@@ -311,27 +311,20 @@ def test_b4_not_charging_counts_as_online_when_no_ac_folder(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# B6: unreadable / non-listable sys_path must not raise
+# B6 (refactored contract): unreadable / non-listable sys_path now raises
 # ---------------------------------------------------------------------------
 
-def test_b6_permission_error_on_listdir_returns_none(tmp_path, monkeypatch):
-    """Simulate a strict container: os.listdir raises PermissionError."""
+def test_b6_permission_error_on_listdir_raises(tmp_path, monkeypatch):
+    """Fatal: unreadable sys_path must bubble PermissionError to the caller."""
     import os as _os
-
-    real_listdir = _os.listdir
 
     def boom(path):
         raise PermissionError(13, "Permission denied", str(path))
 
-    # Only break the top-level sys_path listing.
     monkeypatch.setattr(_os, "listdir", boom)
 
-    sampler = LinuxBatterySampler(sys_path=str(tmp_path))
-    assert sampler.battery_path is None
-    assert sampler.ac_path is None
-    assert sampler.get_battery_snapshot() is None
-
-    monkeypatch.setattr(_os, "listdir", real_listdir)
+    with pytest.raises(PermissionError):
+        LinuxBatterySampler(sys_path=str(tmp_path))
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +360,22 @@ def test_b7_ac_online_unreadable_discharging_infers_offline(tmp_path):
     snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
 
     assert snap.online is False
+
+
+# ---------------------------------------------------------------------------
+# Refactored contract: online is None when neither source can be read
+# ---------------------------------------------------------------------------
+
+def test_online_is_none_when_ac_missing_and_status_missing(tmp_path):
+    """Partial error: no AC folder, no status file -> honest None."""
+    _make_bat(tmp_path, {})   # battery exists but no status file
+    # No AC directory.
+
+    snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
+
+    assert snap is not None
+    assert snap.status is None
+    assert snap.online is None
 
 
 # ---------------------------------------------------------------------------
@@ -569,10 +578,10 @@ def test_multiple_acs_picks_first_sorted(tmp_path):
     assert snap.online is False   # AC0 (sorted first) has online=0
 
 
-def test_nonexistent_sys_path_returns_none(tmp_path):
-    assert LinuxBatterySampler(
-        sys_path=str(tmp_path / "does_not_exist")
-    ).get_battery_snapshot() is None
+def test_nonexistent_sys_path_raises(tmp_path):
+    """Fatal: missing sys_path now bubbles FileNotFoundError (was: return None)."""
+    with pytest.raises(FileNotFoundError):
+        LinuxBatterySampler(sys_path=str(tmp_path / "does_not_exist"))
 
 
 # ---------------------------------------------------------------------------
@@ -682,11 +691,12 @@ def test_hours_left_rounded_to_two_decimals(tmp_path):
     assert snap.hours_left == 7.14
 
 
-def test_missing_status_falls_back_to_unknown(tmp_path):
+def test_missing_status_is_none(tmp_path):
+    """Partial error: missing status file -> None (was: 'Unknown' fallback)."""
     _make_bat(tmp_path, {"capacity": "50"})
     _make_ac(tmp_path, online="0")
 
     snap = LinuxBatterySampler(sys_path=str(tmp_path)).get_battery_snapshot()
 
-    assert snap.status == "Unknown"
+    assert snap.status is None
     assert snap.hours_left is None

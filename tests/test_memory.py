@@ -40,29 +40,74 @@ def test_memory_sampler_happy_path_and_parsing():
 
 
 # ---------------------------------------------------------------------------
-# Existing edges (kept, one portability tweak)
+# Refactored contract: missing inputs -> None fields, not zero sentinels
 # ---------------------------------------------------------------------------
 
-def test_memory_sampler_empty_file_returns_zero_snapshot(tmp_path):
-    """Empty meminfo -> no keys -> zero snapshot instead of KeyError.
+def test_memory_sampler_empty_file_returns_all_none(tmp_path):
+    """Empty meminfo -> no keys -> all fields None (was: all-zeros snapshot).
 
-    Previously this used /dev/null, which is POSIX-only and also happens to
-    read as an empty file. An explicit empty tmp file is clearer and portable.
+    The sampler no longer substitutes 0 for "no data"; missing inputs stay
+    None so the view can render N/A rather than lie about 0% usage.
     """
     sampler = LinuxMemorySampler(mem_path=_write_meminfo(tmp_path, ""))
     snapshot = sampler.get_snapshot()
 
-    assert snapshot.total_gb == 0.0
-    assert snapshot.used_pct == 0.0
+    assert snapshot.total_gb is None
+    assert snapshot.available_gb is None
+    assert snapshot.used_gb is None
+    assert snapshot.used_pct is None
 
 
-def test_memory_sampler_zero_total_memory_returns_zero_snapshot(tmp_path):
-    """MemTotal: 0 -> bypass division, zero snapshot."""
+def test_memory_sampler_zero_total_memory_returns_partial_snapshot(tmp_path):
+    """MemTotal: 0 -> total_gb=0.0 honestly, but used/pct are None.
+
+    used = total - available is meaningless when total == 0, so those fields
+    are None rather than a misleading 0.0. Byte counts that ARE known (total
+    and available) are still reported.
+    """
     path = _write_meminfo(tmp_path, "MemTotal: 0 kB\nMemAvailable: 0 kB\n")
     snapshot = LinuxMemorySampler(mem_path=path).get_snapshot()
 
     assert snapshot.total_gb == 0.0
-    assert snapshot.used_pct == 0.0
+    assert snapshot.available_gb == 0.0
+    assert snapshot.used_gb is None
+    assert snapshot.used_pct is None
+
+
+def test_memory_sampler_missing_total_returns_partial_snapshot(tmp_path):
+    """MemAvailable present but MemTotal absent -> total unknown, avail known.
+
+    New partial state introduced by the refactor: we can report the absolute
+    available figure, but without a denominator we can't compute usage %.
+    """
+    path = _write_meminfo(
+        tmp_path,
+        "MemAvailable:    8388608 kB\n",   # 8 GiB, no MemTotal line
+    )
+    snapshot = LinuxMemorySampler(mem_path=path).get_snapshot()
+
+    assert snapshot.total_gb is None
+    assert snapshot.available_gb == 8.0
+    assert snapshot.used_gb is None
+    assert snapshot.used_pct is None
+
+
+def test_memory_sampler_no_available_sources_returns_partial_snapshot(tmp_path):
+    """MemTotal present, no MemAvailable / MemFree / Buffers / Cached.
+
+    Old behavior: fallback summed three missing keys as 0+0+0 = 0, then
+    reported used_pct = 100% — a lie. New behavior: available is None.
+    """
+    path = _write_meminfo(
+        tmp_path,
+        "MemTotal:       16777216 kB\n",
+    )
+    snapshot = LinuxMemorySampler(mem_path=path).get_snapshot()
+
+    assert snapshot.total_gb == 16.0
+    assert snapshot.available_gb is None
+    assert snapshot.used_gb is None
+    assert snapshot.used_pct is None
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +133,7 @@ def test_memory_sampler_missing_memavailable_uses_fallback(tmp_path):
 
 
 def test_memory_sampler_fallback_with_only_memfree(tmp_path):
-    """M1 fallback treats missing Buffers/Cached as 0 rather than failing."""
+    """M1 fallback: only MemFree present -> sum the components that exist."""
     path = _write_meminfo(
         tmp_path,
         "MemTotal:       16777216 kB\n"
@@ -240,15 +285,20 @@ def test_memory_sampler_init_raises_on_missing_file(tmp_path):
         LinuxMemorySampler(mem_path=str(tmp_path / "does_not_exist"))
 
 
-def test_memory_sampler_get_mem_data_survives_runtime_ioerror(tmp_path):
-    """File vanishes after construction -> get_mem_data returns {}, no raise."""
+def test_memory_sampler_get_mem_data_raises_on_runtime_ioerror(tmp_path):
+    """File vanishes after construction -> get_mem_data() raises.
+
+    Was: get_mem_data swallowed IOError and returned {} (fatal path
+    degraded into a zero snapshot). The refactor removes that catch so
+    the missing file bubbles to LinuxCollector / main.py per rule 1.
+    """
     path = _write_meminfo(tmp_path, "MemTotal: 16777216 kB\n")
     sampler = LinuxMemorySampler(mem_path=path)
 
     os.remove(path)
-    assert sampler.get_mem_data() == {}
 
-    # get_snapshot() must also degrade gracefully to a zero snapshot.
-    snapshot = sampler.get_snapshot()
-    assert snapshot.total_gb == 0.0
-    assert snapshot.used_pct == 0.0
+    with pytest.raises(FileNotFoundError):
+        sampler.get_mem_data()
+
+    with pytest.raises(FileNotFoundError):
+        sampler.get_snapshot()

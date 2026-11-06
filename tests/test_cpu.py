@@ -9,8 +9,12 @@ from engine.linux_cpu import LinuxCpuSampler
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _bare_sampler(last_total: float, last_idle: float) -> LinuxCpuSampler:
-    """Construct a sampler without touching /proc/stat."""
+def _bare_sampler(last_total: float | None, last_idle: float | None) -> LinuxCpuSampler:
+    """Construct a sampler without touching /proc/stat.
+
+    Baseline fields are now Optional — None represents "no baseline yet",
+    matching the refactored contract where the (0.0, 0.0) sentinel is gone.
+    """
     s = LinuxCpuSampler.__new__(LinuxCpuSampler)
     s.stat_path = "/proc/stat"
     s._last_total = last_total
@@ -40,13 +44,17 @@ def test_cpu_sampler_normal_tick():
 
 
 def test_cpu_sampler_does_not_corrupt_baseline_on_failed_read():
-    """A failed /proc/stat read must not overwrite the last good baseline."""
+    """A failed /proc/stat read must not overwrite the last good baseline.
+
+    The refactored contract uses None (not (0.0, 0.0)) to signal a failed
+    parse, and usage_pct is None (not 0.0) when no delta can be computed.
+    """
     sampler = _bare_sampler(100_000.0, 60_000.0)
 
-    with patch.object(sampler, "_get_raw_times", return_value=(0.0, 0.0)):
+    with patch.object(sampler, "_get_raw_times", return_value=None):
         snap = sampler.get_snapshot()
 
-    assert snap.usage_pct == 0.0
+    assert snap.usage_pct is None
     assert sampler._last_total == 100_000.0
     assert sampler._last_idle == 60_000.0
 
@@ -58,14 +66,19 @@ def test_cpu_sampler_does_not_corrupt_baseline_on_failed_read():
     assert sampler._last_idle == 60_400.0
 
 
-def test_cpu_sampler_first_read_after_failed_init():
-    """When __init__ swallowed FileNotFoundError, first good read seeds only."""
-    sampler = _bare_sampler(0.0, 0.0)
+def test_cpu_sampler_first_read_after_unseeded_baseline():
+    """When the baseline is None (no prior read), the first good read seeds only.
+
+    Previously this modeled __init__ swallowing FileNotFoundError. Now that
+    __init__ raises, a None baseline can still arise if the file was malformed
+    at init time — the seeding behavior is what we're pinning down.
+    """
+    sampler = _bare_sampler(None, None)
 
     with patch.object(sampler, "_get_raw_times", return_value=(100_000.0, 60_000.0)):
         snap = sampler.get_snapshot()
 
-    assert snap.usage_pct == 0.0
+    assert snap.usage_pct is None
     assert sampler._last_total == 100_000.0
     assert sampler._last_idle == 60_000.0
 
@@ -76,26 +89,26 @@ def test_cpu_sampler_first_read_after_failed_init():
 
 
 def test_cpu_sampler_delta_total_non_positive():
-    """If total ticks go backwards, report 0% instead of dividing."""
+    """If total ticks go backwards, report None instead of dividing."""
     sampler = _bare_sampler(100_000.0, 60_000.0)
 
     with patch.object(sampler, "_get_raw_times", return_value=(99_000.0, 59_000.0)):
         snap = sampler.get_snapshot()
 
-    assert snap.usage_pct == 0.0
+    assert snap.usage_pct is None
     # Baseline updated so we recover on the next tick
     assert sampler._last_total == 99_000.0
     assert sampler._last_idle == 59_000.0
 
 
 def test_cpu_sampler_delta_total_zero():
-    """Exactly zero total delta (file replaced, same values) -> 0%, no div-by-0."""
+    """Exactly zero total delta (file replaced, same values) -> None, no div-by-0."""
     sampler = _bare_sampler(100_000.0, 60_000.0)
 
     with patch.object(sampler, "_get_raw_times", return_value=(100_000.0, 60_000.0)):
         snap = sampler.get_snapshot()
 
-    assert snap.usage_pct == 0.0
+    assert snap.usage_pct is None
     assert sampler._last_total == 100_000.0
 
 
@@ -241,54 +254,69 @@ def test_get_raw_times_minimum_five_fields(tmp_path):
     assert idle == 3500
 
 
-def test_get_raw_times_too_few_fields_returns_zero(tmp_path):
-    """Fewer than 5 numeric fields -> (0, 0) sentinel."""
+def test_get_raw_times_too_few_fields_returns_none(tmp_path):
+    """Fewer than 5 numeric fields -> None (was: (0.0, 0.0) sentinel)."""
     path = _write_stat(tmp_path, "cpu 100 50 200 3000\n")
-    assert LinuxCpuSampler(stat_path=path)._get_raw_times() == (0.0, 0.0)
+    assert LinuxCpuSampler(stat_path=path)._get_raw_times() is None
 
 
-def test_get_raw_times_malformed_number_returns_zero(tmp_path):
-    """Non-numeric token anywhere -> (0, 0); does not raise."""
+def test_get_raw_times_malformed_number_returns_none(tmp_path):
+    """Non-numeric token anywhere -> None; does not raise."""
     path = _write_stat(tmp_path, "cpu 100 abc 200 3000 500\n")
-    assert LinuxCpuSampler(stat_path=path)._get_raw_times() == (0.0, 0.0)
+    assert LinuxCpuSampler(stat_path=path)._get_raw_times() is None
 
 
-def test_get_raw_times_empty_file_returns_zero(tmp_path):
-    """Empty file -> readline() returns '' -> (0, 0)."""
+def test_get_raw_times_empty_file_returns_none(tmp_path):
+    """Empty file -> readline() returns '' -> None.
+
+    __init__ still raises on empty (see test_init_empty_file_raises), so to
+    reach _get_raw_times() we use __new__ to skip the health check.
+    """
     path = _write_stat(tmp_path, "")
-    assert LinuxCpuSampler(stat_path=path)._get_raw_times() == (0.0, 0.0)
+    s = LinuxCpuSampler.__new__(LinuxCpuSampler)
+    s.stat_path = path
+    assert s._get_raw_times() is None
 
 
-def test_get_raw_times_whitespace_only_line_returns_zero(tmp_path):
-    """'  \\n' -> split() gives [] -> < 5 fields -> (0, 0)."""
+def test_get_raw_times_whitespace_only_line_returns_none(tmp_path):
+    """'  \\n' -> split() gives [] -> < 5 fields -> None."""
     path = _write_stat(tmp_path, "   \n")
-    assert LinuxCpuSampler(stat_path=path)._get_raw_times() == (0.0, 0.0)
+    s = LinuxCpuSampler.__new__(LinuxCpuSampler)
+    s.stat_path = path
+    assert s._get_raw_times() is None
 
 
-def test_get_raw_times_missing_file_returns_zero(tmp_path):
-    """Deleted / unreadable file -> IOError swallowed -> (0, 0)."""
-    assert LinuxCpuSampler(
-        stat_path=str(tmp_path / "nope")
-    )._get_raw_times() == (0.0, 0.0)
+def test_get_raw_times_missing_file_raises(tmp_path):
+    """Fatal: deleted / unreadable file now bubbles FileNotFoundError.
+
+    Previously the IOError was swallowed and (0.0, 0.0) was returned; the
+    refactored contract says the fatal case throws.
+    """
+    s = LinuxCpuSampler.__new__(LinuxCpuSampler)
+    s.stat_path = str(tmp_path / "nope")
+    with pytest.raises(FileNotFoundError):
+        s._get_raw_times()
 
 
 # ---------------------------------------------------------------------------
 # __init__ / _initialize_first_tick
 # ---------------------------------------------------------------------------
 
-def test_init_missing_file_does_not_raise(tmp_path):
-    """__init__ swallows FileNotFoundError; baseline stays 0."""
-    s = LinuxCpuSampler(stat_path=str(tmp_path / "missing"))
-    assert s._last_total == 0.0
-    assert s._last_idle == 0.0
+def test_init_missing_file_raises(tmp_path):
+    """Fatal: missing /proc/stat now bubbles FileNotFoundError at construction.
+
+    Previously __init__ swallowed it and left the baseline at 0.0; the
+    refactored contract says a completely unreadable primary source throws.
+    """
+    with pytest.raises(FileNotFoundError):
+        LinuxCpuSampler(stat_path=str(tmp_path / "missing"))
 
 
-def test_init_empty_file_does_not_raise(tmp_path):
-    """_initialize_first_tick raises on empty file; __init__ catches it."""
+def test_init_empty_file_raises(tmp_path):
+    """Empty /proc/stat is treated as fatal (explicit raise in _initialize_first_tick)."""
     path = _write_stat(tmp_path, "")
-    s = LinuxCpuSampler(stat_path=path)
-    assert s._last_total == 0.0
-    assert s._last_idle == 0.0
+    with pytest.raises(FileNotFoundError):
+        LinuxCpuSampler(stat_path=path)
 
 
 def test_init_valid_file_seeds_baseline(tmp_path):
@@ -300,9 +328,13 @@ def test_init_valid_file_seeds_baseline(tmp_path):
     assert s._last_idle == 3000 + 500
 
 
-def test_init_then_first_snapshot_is_zero(tmp_path):
-    """After a successful __init__, the very first snapshot has no prior tick."""
+def test_init_then_first_snapshot_is_none(tmp_path):
+    """After a successful __init__, the very first snapshot has no prior delta.
+
+    Both __init__ and get_snapshot() read the same file, so delta_total == 0
+    and usage_pct is None (was: 0.0).
+    """
     path = _write_stat(tmp_path, "cpu 100 50 200 3000 500 10 20 0\n")
     s = LinuxCpuSampler(stat_path=path)
 
-    assert s.get_snapshot().usage_pct == 0.0
+    assert s.get_snapshot().usage_pct is None

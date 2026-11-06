@@ -66,13 +66,13 @@ def test_parsing_and_delta_math(tmp_path, monkeypatch):
     assert eth0.interface == "eth0"
     assert eth0.status == "CONNECTED"
 
-    # (1012500 - 1000000)/1.25 = 10,000 B/s 
+    # (1012500 - 1000000)/1.25 = 10,000 B/s
     assert eth0.download_bps == 10000
-    # (2005000 - 2000000)/1.25 =  4,000 B/s 
+    # (2005000 - 2000000)/1.25 =  4,000 B/s
     assert eth0.upload_bps == 4000
 
-    assert eth0.rx_errors == 2 # errs
-    assert eth0.rx_drops == 1       #/drop
+    assert eth0.rx_errors == 2
+    assert eth0.rx_drops == 1
     assert eth0.tx_errors == 4
     assert eth0.tx_drops == 2
     # 1012500 + 2005000 = 3,017,500 B
@@ -82,8 +82,8 @@ def test_parsing_and_delta_math(tmp_path, monkeypatch):
 def test_interface_disconnect(tmp_path, monkeypatch):
     """An interface that disappears between snapshots is reported DISCONNECTED.
 
-    Note: because `_get_raw_stats` early-returns on an *empty* table, t2 must
-    still contain at least one other interface for the disconnect branch to run.
+    Interfaces are tracked via the union of `_last_stats` keys and the
+    current stats, so a vanished interface still gets a DISCONNECTED row.
     """
     t1 = MOCK_HEADER + (
         "  eth0:  1000   1   0   0   0   0   0   0    1000   1   0   0   0   0   0   0\n"
@@ -106,7 +106,7 @@ def test_interface_disconnect(tmp_path, monkeypatch):
     wlan = by_iface["wlan0"]
     assert wlan.status == "DISCONNECTED"
     assert wlan.download_bps == 0.00
-    assert wlan.upload_bps == 0.00     # note lowercase 'k' in impl
+    assert wlan.upload_bps == 0.00
     assert wlan.rx_errors == 0
     assert wlan.tx_errors == 0
     assert wlan.total_bytes == 80000
@@ -130,18 +130,16 @@ def test_counter_reset_edge_case(tmp_path, monkeypatch):
     assert len(results) == 1
     eth0 = results[0]
     assert eth0.status == "CONNECTED"
-    assert eth0.download_bps == 0.00 
+    assert eth0.download_bps == 0.00
     assert eth0.upload_bps == 0.00
 
 
 def test_hotplug_edge_case(tmp_path, monkeypatch):
     """An interface that appears mid-session is surfaced with zero speed.
 
-    NOTE: the current sampler labels this "DISCONNECTED" (State 2). If you
-    want it to read "CONNECTING" (as main.py's display branch expects), change
-    the status literal in `get_network_snapshot` State 2 — but that's a code
-    change, not a test change, so the assertion below mirrors what the code
-    actually emits today.
+    State 2 in `get_network_snapshot` labels this "CONNECTING"; the display
+    branch in main.py keys off that literal, so the assertion below pins the
+    contract between the two.
     """
     t1 = MOCK_HEADER + (
         "  eth0: 1000 1 0 0 0 0 0 0 1000 1 0 0 0 0 0 0\n"
@@ -161,7 +159,38 @@ def test_hotplug_edge_case(tmp_path, monkeypatch):
     by_iface = {r.interface: r for r in results}
     enx = by_iface["enx001122334455"]
 
-    assert enx.status == "CONNECTING"       # mirrors current impl
+    assert enx.status == "CONNECTING"
     assert enx.download_bps == 0.00
     assert enx.upload_bps == 0.00
     assert enx.total_bytes == 3000         # (2000 + 1000) bytes
+
+
+def test_missing_netdev_file_raises(tmp_path, monkeypatch):
+    """Fatal: /proc/net/dev missing -> FileNotFoundError bubbles.
+
+    Was: swallowed into InternalResult(Errors.FILE_NOT_FOUND) and turned
+    into an empty return list. Now the open() call is fatal.
+    """
+    _install_clock(monkeypatch, [1.0, 2.0])
+    sampler = LinuxNetworkSampler(netdev_path=str(tmp_path / "nope"))
+
+    with pytest.raises(FileNotFoundError):
+        sampler.get_network_snapshot()
+
+
+def test_no_valid_interfaces_returns_empty_list(tmp_path, monkeypatch):
+    """No hardware: file exists but no matching physical interfaces -> [].
+
+    First tick always returns [] anyway (baseline priming); this test drives
+    a second tick with no matching interfaces to confirm the empty-list
+    no-hardware path.
+    """
+    t = MOCK_HEADER + (
+        "    lo: 100 1 0 0 0 0 0 0 100 1 0 0 0 0 0 0\n"  # lo is filtered out
+    )
+
+    sampler, path = _make_sampler(tmp_path, monkeypatch, t, [1.0, 2.0])
+    assert sampler.get_network_snapshot() == []   # baseline
+
+    _write(tmp_path, t)                           # same content, second tick
+    assert sampler.get_network_snapshot() == []

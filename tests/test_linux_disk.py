@@ -1,6 +1,8 @@
 from unittest.mock import patch, MagicMock
+
+import pytest
+
 from engine.linux_disk import LinuxDiskSampler
-from engine.results_and_errors import Errors
 
 
 # ===========================================================================
@@ -36,7 +38,8 @@ def test_disk_space_percent_rounds_to_one_decimal():
 
 
 def test_disk_space_zero_total_percent_is_none():
-    """Guard against div-by-zero when total is 0."""
+    """Guard against div-by-zero when total is 0 (partial: percent is None,
+    byte counts still populated)."""
     fake_usage = MagicMock()
     fake_usage.total = 0
     fake_usage.used = 0
@@ -49,15 +52,22 @@ def test_disk_space_zero_total_percent_is_none():
     assert snap.percent is None
 
 
-def test_disk_space_exception_returns_none_snapshot():
-    """Read failure is not a crash — None signals 'no data' to the view."""
-    with patch("engine.linux_disk.shutil.disk_usage", side_effect=OSError):
-        snap = LinuxDiskSampler().get_space_snapshot()
+def test_disk_space_oserror_raises():
+    """Fatal: disk_usage failures now bubble (was: all-None snapshot).
 
-    assert snap.total_bytes is None
-    assert snap.used_bytes is None
-    assert snap.free_bytes is None
-    assert snap.percent is None
+    The sampler no longer catches; the caller is expected to handle.
+    """
+    with patch("engine.linux_disk.shutil.disk_usage", side_effect=OSError("boom")):
+        with pytest.raises(OSError):
+            LinuxDiskSampler().get_space_snapshot()
+
+
+def test_disk_space_permission_error_raises():
+    """Fatal: PermissionError from disk_usage bubbles to the caller."""
+    with patch("engine.linux_disk.shutil.disk_usage",
+               side_effect=PermissionError(13, "Permission denied")):
+        with pytest.raises(PermissionError):
+            LinuxDiskSampler().get_space_snapshot()
 
 
 # ===========================================================================
@@ -144,7 +154,7 @@ def test_disk_io_new_device_not_in_output(mock_time, tmp_path):
 
 
 # ===========================================================================
-# DISK STATS PARSING (unchanged)
+# DISK STATS PARSING
 # ===========================================================================
 
 def test_disk_io_filters_partitions_and_virtual(tmp_path):
@@ -155,10 +165,9 @@ def test_disk_io_filters_partitions_and_virtual(tmp_path):
         "7 0 loop0 100 0 100 0 100 0 100 0 0 0 0\n"
     )
 
-    result = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
+    stats = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
 
-    assert result.error is None
-    assert set(result.data) == {"sda"}
+    assert set(stats) == {"sda"}
 
 
 def test_disk_stats_accepts_nvme_and_mmc(tmp_path):
@@ -170,42 +179,60 @@ def test_disk_stats_accepts_nvme_and_mmc(tmp_path):
         "252 0 vda 0 0 0 0 0 0 0 0 0 0 0\n"
     )
 
-    result = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
+    stats = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
 
-    assert result.error is None
-    assert set(result.data) == {"nvme0n1", "mmcblk0", "hda", "vda"}
+    assert set(stats) == {"nvme0n1", "mmcblk0", "hda", "vda"}
 
 
-def test_disk_stats_no_valid_devices_is_not_present(tmp_path):
+def test_disk_stats_no_valid_devices_returns_empty_dict(tmp_path):
+    """No matching devices -> empty dict (was: Errors.NOT_PRESENT).
+
+    Empty dict is the "no hardware" signal; get_io_snapshot turns it into [].
+    """
     f = tmp_path / "diskstats"
     f.write_text(
         "8 1 sda1 100 0 100 0 100 0 100 0 0 0 0\n"
         "7 0 loop0 100 0 100 0 100 0 100 0 0 0 0\n"
     )
 
-    result = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
+    stats = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
 
-    assert result.data is None
-    assert result.error == Errors.NOT_PRESENT
-
-
-def test_disk_stats_missing_file_is_file_not_found(tmp_path):
-    result = LinuxDiskSampler(
-        diskstats_path=str(tmp_path / "nope")
-    )._get_disk_stats()
-
-    assert result.data is None
-    assert result.error == Errors.FILE_NOT_FOUND
+    assert stats == {}
 
 
-def test_disk_stats_non_numeric_is_parse_failed(tmp_path):
+def test_disk_stats_missing_file_raises(tmp_path):
+    """Fatal: missing /proc/diskstats now bubbles FileNotFoundError."""
+    with pytest.raises(FileNotFoundError):
+        LinuxDiskSampler(
+            diskstats_path=str(tmp_path / "nope")
+        )._get_disk_stats()
+
+
+def test_disk_stats_malformed_field_skips_device(tmp_path):
+    """Partial: non-numeric field on one device -> skip that device, no raise.
+
+    Was: Errors.PARSE_FAILED (whole-file failure). Now per-line try/except
+    continues, so the result is whatever other valid lines produced.
+    """
     f = tmp_path / "diskstats"
     f.write_text("8 0 sda 100 0 abc 0 100 0 4000 0 0 0 0\n")
 
-    result = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
+    stats = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
 
-    assert result.data is None
-    assert result.error == Errors.PARSE_FAILED
+    assert stats == {}
+
+
+def test_disk_stats_malformed_field_does_not_poison_other_devices(tmp_path):
+    """Partial: one bad device does not drop the good ones."""
+    f = tmp_path / "diskstats"
+    f.write_text(
+        "8 0 sda 100 0 abc 0 100 0 4000 0 0 0 0\n"
+        "8 16 sdb 100 0 200 0 100 0 400 0 0 0 0\n"
+    )
+
+    stats = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
+
+    assert set(stats) == {"sdb"}
 
 
 def test_disk_stats_short_lines_skipped(tmp_path):
@@ -215,45 +242,50 @@ def test_disk_stats_short_lines_skipped(tmp_path):
         "8 0 sda 100 0 100 0 100 0 100 0 0 0 0\n"
     )
 
-    result = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
+    stats = LinuxDiskSampler(diskstats_path=str(f))._get_disk_stats()
 
-    assert result.error is None
-    assert set(result.data) == {"sda"}
+    assert set(stats) == {"sda"}
 
 
-def test_get_io_snapshot_returns_empty_on_error(tmp_path):
+def test_get_io_snapshot_missing_file_raises(tmp_path):
+    """Fatal: missing file bubbles from get_io_snapshot (was: return []).
+
+    Baseline is not touched because the exception short-circuits before any
+    assignment in get_io_snapshot().
+    """
     sampler = LinuxDiskSampler(diskstats_path=str(tmp_path / "nope"))
 
-    assert sampler.get_io_snapshot() == []
+    with pytest.raises(FileNotFoundError):
+        sampler.get_io_snapshot()
+
     assert sampler._last_stats is None
 
 
 # ===========================================================================
-# STATE PROPERTIES (unchanged)
+# STATE (rewritten — public state properties were removed)
 # ===========================================================================
 
-def test_state_after_first_tick_with_devices(tmp_path):
-    f = tmp_path / "diskstats"
-    f.write_text("8 0 sda 0 0 0 0 0 0 0 0 0 0 0\n")
-    sampler = LinuxDiskSampler(diskstats_path=str(f))
-    sampler.get_io_snapshot()
-    assert sampler.is_primed
-    assert sampler.has_known_devices
-    assert sampler.last_error is None
+def test_empty_tick_still_primes_baseline(tmp_path):
+    """First tick with an empty file seeds _last_stats = {}.
 
-
-def test_state_no_devices_after_tick(tmp_path):
+    was_known_devices / is_primed properties are gone; the observable
+    equivalent is inspecting _last_stats directly.
+    """
     f = tmp_path / "diskstats"
-    f.write_text("")  # file exists, no lines
+    f.write_text("")
     sampler = LinuxDiskSampler(diskstats_path=str(f))
+
     assert sampler.get_io_snapshot() == []
-    assert sampler.is_primed          # we ticked
-    assert not sampler.has_known_devices  # no devices ever
-    assert sampler.last_error is None
+    assert sampler._last_stats == {}
+    assert sampler._last_time is not None
 
 
-def test_state_broken_file(tmp_path):
+def test_broken_file_leaves_baseline_unset(tmp_path):
+    """Fatal on first tick: _last_stats stays None (exception prevents seeding)."""
     sampler = LinuxDiskSampler(diskstats_path=str(tmp_path / "nope"))
-    assert sampler.get_io_snapshot() == []
-    assert sampler.last_error == Errors.FILE_NOT_FOUND
-    assert not sampler.is_primed      # never ticked successfully
+
+    with pytest.raises(FileNotFoundError):
+        sampler.get_io_snapshot()
+
+    assert sampler._last_stats is None
+    assert sampler._last_time is None

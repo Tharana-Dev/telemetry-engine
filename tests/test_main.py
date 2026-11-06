@@ -3,7 +3,9 @@ Tests for main.py — the CLI dashboard.
 
 Strategy:
 - Pure helpers (format_*, print_side_by_side) get unit-level coverage.
-- _sampler_state gets fakes for every sampler shape.
+- gather_snapshots (data layer) is tested with fake collectors.
+- build_dashboard (UI layer) is tested as a pure function against synthetic
+  snapshot dicts — it must never touch a collector.
 - main() runs exactly one iteration via time.sleep -> KeyboardInterrupt,
   then capsys is asserted for the rendered view.
 """
@@ -14,11 +16,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from main import (
-    _sampler_state,
+    build_dashboard,
     format_disk_size,
     format_disk_speed,
     format_speed_bits,
     format_total_data,
+    gather_snapshots,
     main,
     print_side_by_side,
 )
@@ -79,11 +82,8 @@ def _make_fake_collector():
         ),
     ]
 
-    # No raw samplers → _sampler_state falls back to (True, True, None),
-    # so the "normal render" branch runs by default.
-    col.disk_sampler = None
-    col.network_sampler = None
-    col.sampler_status.return_value = {}
+    # Empty health map -> no degraded subsystems on the banner.
+    col.get_system_health.return_value = {}
     return col
 
 
@@ -307,55 +307,108 @@ def test_print_side_by_side_handles_empty_lines(capsys):
 
 
 # ===========================================================================
-# _sampler_state
+# gather_snapshots (DATA LAYER)
 # ===========================================================================
 
-def test_sampler_state_no_sampler_attribute():
-    class FakeCollector:
-        pass
+def test_gather_snapshots_returns_all_subsystems():
+    """Every get_*() call becomes a (result, None) entry."""
+    snaps = gather_snapshots(_make_fake_collector())
 
-    assert _sampler_state(FakeCollector(), "disk") == (True, True, None)
-
-
-def test_sampler_state_sampler_is_none():
-    class FakeCollector:
-        disk_sampler = None
-
-    assert _sampler_state(FakeCollector(), "disk") == (True, True, None)
-
-
-def test_sampler_state_old_sampler_without_is_ready():
-    class OldSampler:
-        pass
-
-    class FakeCollector:
-        disk_sampler = OldSampler()
-
-    assert _sampler_state(FakeCollector(), "disk") == (True, True, None)
+    assert set(snaps) == {
+        "cpu", "memory", "battery", "thermal",
+        "disk_io", "disk_space", "network",
+    }
+    cpu, cpu_err = snaps["cpu"]
+    assert cpu_err is None
+    assert cpu.usage_pct == 42.0
 
 
-def test_sampler_state_with_full_sampler():
-    class FakeSampler:
-        is_ready = False
-        has_known_devices = True
-        last_error = None
+def test_gather_snapshots_captures_exceptions():
+    """A raised sampler call becomes (None, str(exc)); siblings unaffected."""
+    collector = _make_fake_collector()
+    collector.get_cpu_snapshot.side_effect = RuntimeError("boom")
+    collector.get_network_snapshot.side_effect = PermissionError(13, "denied")
 
-    class FakeCollector:
-        disk_sampler = FakeSampler()
+    snaps = gather_snapshots(collector)
 
-    assert _sampler_state(FakeCollector(), "disk") == (False, True, None)
+    cpu, cpu_err = snaps["cpu"]
+    assert cpu is None
+    assert "boom" in cpu_err
+
+    net, net_err = snaps["network"]
+    assert net is None
+    assert "denied" in net_err
+
+    # Neighbours are untouched.
+    mem, mem_err = snaps["memory"]
+    assert mem_err is None
+    assert mem.used_pct == 50.0
 
 
-def test_sampler_state_with_error():
-    class FakeSampler:
-        is_ready = True
-        has_known_devices = True
-        last_error = "FILE_NOT_FOUND"
+def test_gather_snapshots_passes_through_none_and_empty():
+    """None (no hardware) and [] (first tick) pass through unchanged."""
+    collector = _make_fake_collector()
+    collector.get_battery_snapshot.return_value = None
+    collector.get_disk_io_snapshot.return_value = []
 
-    class FakeCollector:
-        disk_sampler = FakeSampler()
+    snaps = gather_snapshots(collector)
 
-    assert _sampler_state(FakeCollector(), "disk") == (True, True, "FILE_NOT_FOUND")
+    assert snaps["battery"] == (None, None)
+    assert snaps["disk_io"] == ([], None)
+
+
+# ===========================================================================
+# build_dashboard (UI LAYER — pure function)
+# ===========================================================================
+
+def _fake_snapshots(**overrides):
+    """Complete snapshots dict for build_dashboard; per-key overridable."""
+    base = {
+        "cpu": (_mk(usage_pct=42.0), None),
+        "memory": (_mk(used_pct=50.0, used_gb=4.0, total_gb=8.0), None),
+        "battery": (_mk(
+            status="Charging", capacity=80, power_watts=15.0,
+            hours_left=None, health_percent=95.0, online=True,
+        ), None),
+        "thermal": (_mk(
+            sensor_available=True, cpu_temp=55.0, cpu_temp_max=100.0,
+            system_fans={"fan1": 1000}, gpu_available=True,
+            gpus=[_mk(index=0, name="GPU", temperature_c=45,
+                      utilization_pct=10, power_w=14.0)],
+        ), None),
+        "disk_io": ([_mk(device="sda", read_bps=1_048_576, write_bps=2_097_152)], None),
+        "disk_space": (_mk(
+            total_bytes=500 * 1024 ** 3,
+            used_bytes=250 * 1024 ** 3,
+            free_bytes=250 * 1024 ** 3, percent=50.0,
+        ), None),
+        "network": ([_mk(
+            interface="eth0", status="CONNECTED",
+            download_bps=1_000_000, upload_bps=500_000,
+            rx_errors=0, tx_errors=0, rx_drops=0, tx_drops=0,
+            total_bytes=10_000_000,
+        )], None),
+    }
+    base.update(overrides)
+    return base
+
+
+def test_build_dashboard_is_pure():
+    """Same snapshots -> identical output on repeated calls."""
+    snaps = _fake_snapshots()
+    a = build_dashboard(snaps, "Linux", False, None, [])
+    b = build_dashboard(snaps, "Linux", False, None, [])
+    assert a == b
+
+
+def test_build_dashboard_renders_from_snapshots_only():
+    """build_dashboard accepts a plain dict; no collector involved."""
+    left, right = build_dashboard(_fake_snapshots(), "Linux", False, None, [])
+
+    assert any("SYSTEM & HARDWARE" in line for line in left)
+    assert any("42.0%" in line for line in left)
+    assert any("500.00 GB" in line for line in right)
+    assert any("eth0 (CONNECTED)" in line for line in right)
 
 
 # ===========================================================================
@@ -377,6 +430,13 @@ def test_main_happy_path_linux_renders_all_sections(capsys):
     assert "50.0%" in out
     assert "4.00 GB / 8.00 GB" in out
     assert "eth0 (CONNECTED)" in out
+
+
+def test_main_prints_initializing_splash(capsys):
+    """The very first screen is an 'Initializing...' message, not a blank box."""
+    _run_main_once(_make_fake_collector(), system="Linux")
+    out = capsys.readouterr().out
+    assert "Initializing... gathering first samples" in out
 
 
 def test_main_prints_exit_message_on_keyboard_interrupt(capsys):
@@ -433,9 +493,10 @@ def test_main_falls_back_to_psutil_on_global_init_failure(capsys):
 
 
 def test_main_shows_degraded_banner(capsys):
+    """Non-None entries in get_system_health() become the 'Missing:' list."""
     collector = _make_fake_collector()
-    collector.sampler_status.return_value = {
-        "battery": ValueError("denied"),
+    collector.get_system_health.return_value = {
+        "battery": "PermissionError: denied",
         "thermal": None,
     }
     _run_main_once(collector, system="Linux")
@@ -561,40 +622,50 @@ def test_main_thermal_unavailable(capsys):
     assert "Status:     Unavailable" in out
 
 
-def test_main_thermal_sensor_error(capsys):
+def test_main_thermal_sensor_unavailable(capsys):
+    """sensor_available=False renders the hardcoded 'Unavailable' label.
+
+    Was: rendered the removed `sensor_error` field (e.g. SENSORS_NOT_INSTALLED).
+    The refactor deleted that dataclass field, so the view hardcodes it.
+    """
     collector = _make_fake_collector()
     collector.get_thermal_snapshot.return_value = _mk(
-        sensor_available=False, sensor_error="SENSORS_NOT_INSTALLED",
-        gpu_available=False, gpu_error="BROKEN_DRIVER", gpus=[],
+        sensor_available=False,
+        gpu_available=True, gpus=[],
     )
     _run_main_once(collector, system="Linux")
 
     out = capsys.readouterr().out
-    assert "SENSORS_NOT_INSTALLED" in out
-    assert "BROKEN_DRIVER" in out
+    assert "Sensor:     Unavailable" in out
+
+
+def test_main_thermal_gpu_unavailable(capsys):
+    """gpu_available=False renders 'Not Detected'.
+
+    Was: rendered `gpu_error or 'Unavailable'`. The refactor deleted the
+    `gpu_error` field, so the view uses a fixed 'Not Detected' label.
+    """
+    collector = _make_fake_collector()
+    collector.get_thermal_snapshot.return_value = _mk(
+        sensor_available=True, cpu_temp=50.0, cpu_temp_max=100.0,
+        system_fans={},
+        gpu_available=False, gpus=[],
+    )
+    _run_main_once(collector, system="Linux")
+
+    out = capsys.readouterr().out
+    assert "GPU:        Not Detected" in out
 
 
 def test_main_thermal_gpu_available_but_empty_list(capsys):
     collector = _make_fake_collector()
     collector.get_thermal_snapshot.return_value = _mk(
         sensor_available=True, cpu_temp=50.0, cpu_temp_max=100.0,
-        system_fans={}, gpu_available=True, gpus=[], gpu_error=None,
+        system_fans={}, gpu_available=True, gpus=[],
     )
     _run_main_once(collector, system="Linux")
 
     assert "GPU:        N/A" in capsys.readouterr().out
-
-
-def test_main_thermal_gpu_error_none_falls_back(capsys):
-    """If gpu_available=False and gpu_error=None, the 'or' fallback renders."""
-    collector = _make_fake_collector()
-    collector.get_thermal_snapshot.return_value = _mk(
-        sensor_available=False, sensor_error="X",
-        gpu_available=False, gpu_error=None, gpus=[],
-    )
-    _run_main_once(collector, system="Linux")
-
-    assert "GPU:        Unavailable" in capsys.readouterr().out
 
 
 # ===========================================================================
@@ -628,7 +699,7 @@ def test_main_disk_space_none_fields(capsys):
 
 
 # ===========================================================================
-# main() — disk I/O branches
+# main() — disk I/O branches (refactored to None / [] / data triage)
 # ===========================================================================
 
 def test_main_disk_io_normal_uses_format_disk_speed(capsys):
@@ -640,67 +711,28 @@ def test_main_disk_io_normal_uses_format_disk_speed(capsys):
 
 
 def test_main_disk_io_initializing(capsys):
+    """disk_io == [] (first tick, baseline priming) -> 'Initializing'."""
     collector = _make_fake_collector()
     collector.get_disk_io_snapshot.return_value = []
-    collector.disk_sampler = _mk(
-        is_ready=False, has_known_devices=False, last_error=None,
-    )
     _run_main_once(collector, system="Linux")
 
     assert "Initializing (1s delta)" in capsys.readouterr().out
 
 
-def test_main_disk_io_no_devices(capsys):
+def test_main_disk_io_unavailable_when_none(capsys):
+    """disk_io is None (sampler unavailable) -> 'Unavailable'."""
     collector = _make_fake_collector()
-    collector.get_disk_io_snapshot.return_value = []
-    collector.disk_sampler = _mk(
-        is_ready=True, has_known_devices=False, last_error=None,
-    )
-    _run_main_once(collector, system="Linux")
-
-    assert "No physical devices detected" in capsys.readouterr().out
-
-
-def test_main_disk_io_idle(capsys):
-    collector = _make_fake_collector()
-    collector.get_disk_io_snapshot.return_value = []
-    collector.disk_sampler = _mk(
-        is_ready=True, has_known_devices=True, last_error=None,
-    )
-    _run_main_once(collector, system="Linux")
-
-    assert "Idle" in capsys.readouterr().out
-
-
-def test_main_disk_io_last_error(capsys):
-    collector = _make_fake_collector()
-    collector.get_disk_io_snapshot.return_value = []
-    collector.disk_sampler = _mk(
-        is_ready=False, has_known_devices=False,
-        last_error=_mk(value="FILE_NOT_FOUND"),
-    )
-    _run_main_once(collector, system="Linux")
-
-    assert "FILE_NOT_FOUND" in capsys.readouterr().out
-
-
-def test_main_disk_io_error_beats_initializing(capsys):
-    """last_error must take priority over is_ready=False."""
-    collector = _make_fake_collector()
-    collector.get_disk_io_snapshot.return_value = []
-    collector.disk_sampler = _mk(
-        is_ready=False, has_known_devices=True,
-        last_error=_mk(value="PERMISSION_DENIED"),
-    )
+    collector.get_disk_io_snapshot.return_value = None
     _run_main_once(collector, system="Linux")
 
     out = capsys.readouterr().out
-    assert "PERMISSION_DENIED" in out
-    assert "Initializing (1s delta)" not in out
+    assert "DISK I/O" in out
+    # No per-device rows rendered
+    assert "sda:" not in out
 
 
 # ===========================================================================
-# main() — network branches
+# main() — network branches (refactored to None / [] / data triage)
 # ===========================================================================
 
 def test_main_network_connected_uses_format_speed_bits(capsys):
@@ -744,48 +776,24 @@ def test_main_network_connecting(capsys):
 
 
 def test_main_network_initializing(capsys):
+    """network_data == [] (first tick) -> 'Initializing'."""
     collector = _make_fake_collector()
     collector.get_network_snapshot.return_value = []
-    collector.network_sampler = _mk(
-        is_ready=False, has_known_devices=False, last_error=None,
-    )
     _run_main_once(collector, system="Linux")
 
     assert "Initializing (1s delta)" in capsys.readouterr().out
 
 
-def test_main_network_no_interfaces(capsys):
+def test_main_network_unavailable_when_none(capsys):
+    """network_data is None (sampler unavailable) -> 'Unavailable'."""
     collector = _make_fake_collector()
-    collector.get_network_snapshot.return_value = []
-    collector.network_sampler = _mk(
-        is_ready=True, has_known_devices=False, last_error=None,
-    )
+    collector.get_network_snapshot.return_value = None
     _run_main_once(collector, system="Linux")
 
-    assert "No interfaces detected" in capsys.readouterr().out
-
-
-def test_main_network_idle(capsys):
-    collector = _make_fake_collector()
-    collector.get_network_snapshot.return_value = []
-    collector.network_sampler = _mk(
-        is_ready=True, has_known_devices=True, last_error=None,
-    )
-    _run_main_once(collector, system="Linux")
-
-    assert "Idle" in capsys.readouterr().out
-
-
-def test_main_network_last_error(capsys):
-    collector = _make_fake_collector()
-    collector.get_network_snapshot.return_value = []
-    collector.network_sampler = _mk(
-        is_ready=False, has_known_devices=False,
-        last_error=_mk(value="FILE_NOT_FOUND"),
-    )
-    _run_main_once(collector, system="Linux")
-
-    assert "FILE_NOT_FOUND" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "NETWORK" in out
+    # No per-interface rows rendered
+    assert "eth0 (CONNECTED)" not in out
 
 
 # ===========================================================================
@@ -793,6 +801,7 @@ def test_main_network_last_error(capsys):
 # ===========================================================================
 
 def test_main_calls_clear_on_linux():
+    """Once for the Initializing splash, once per loop iteration."""
     collector = _make_fake_collector()
     with patch("main.platform.system", return_value="Linux"), \
          patch("main.LinuxCollector", return_value=collector), \
@@ -802,7 +811,7 @@ def test_main_calls_clear_on_linux():
         ts.return_value = os.terminal_size((200, 40))
         main()
 
-    assert mock_os_sys.called
+    assert mock_os_sys.call_count == 2
     assert mock_os_sys.call_args[0][0] == "clear"
 
 
@@ -816,4 +825,5 @@ def test_main_calls_cls_on_windows():
         ts.return_value = os.terminal_size((200, 40))
         main()
 
+    assert mock_os_sys.call_count == 2
     assert mock_os_sys.call_args[0][0] == "cls"
