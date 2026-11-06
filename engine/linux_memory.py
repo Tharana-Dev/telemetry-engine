@@ -4,57 +4,61 @@ from engine.models import MemorySnapshot
 class LinuxMemorySampler:
     def __init__(self, mem_path: str = "/proc/meminfo"):
         self.memory_path = mem_path
-        # Health check: fail fast if the file is unreadable at construction
-        # time, rather than silently producing zeros on every snapshot.
+        # Fatal health check: /proc/meminfo must be readable at construction.
+        # FileNotFoundError / PermissionError bubble up to LinuxCollector.
         with open(self.memory_path, "r", encoding="utf-8") as f:
             f.readline()
 
     def get_snapshot(self) -> MemorySnapshot:
         mem = self.get_mem_data()
 
-        mem_total = mem.get("MemTotal", 0)
+        mem_total = mem.get("MemTotal")
+        mem_available = self._resolve_available(mem)
 
-        # M1: MemAvailable is missing on some older kernels (pre-3.14) and is
-        # routinely hidden inside restricted containers. Treat *absent* as
-        # "use the fallback", not as "0 bytes available" (which would read
-        # as 100% used). A present-but-zero MemAvailable is a real reading
-        # and must be preserved.
-        mem_available = mem.get("MemAvailable")
-        if mem_available is None:
-            mem_available = (
-                mem.get("MemFree", 0)
-                + mem.get("Buffers", 0)
-                + mem.get("Cached", 0)
-            )
+        total_gb = mem_total / (1024 * 1024) if mem_total is not None else None
+        available_gb = mem_available / (1024 * 1024) if mem_available is not None else None
 
-        if mem_total <= 0:
+        # Derive used/percent only when both inputs are known AND total > 0.
+        if total_gb is not None and available_gb is not None and total_gb > 0:
+            used_gb = total_gb - available_gb
+            used_pct = (1.0 - (available_gb / total_gb)) * 100
             return MemorySnapshot(
-                total_gb=0.0,
-                used_gb=0.0,
-                used_pct=0.0,
-                available_gb=0.0,
+                total_gb=round(total_gb, 2),
+                used_gb=round(used_gb, 2),
+                used_pct=round(used_pct, 2),
+                available_gb=round(available_gb, 2),
             )
 
-        total = mem_total / (1024 * 1024)
-        available = mem_available / (1024 * 1024)
-        real_used_pct = (1.0 - (available / total)) * 100
-
+        # Partial: one of the inputs is missing (or total == 0). Report the
+        # figures we do have, None for everything that can't be derived.
         return MemorySnapshot(
-            total_gb=round(total, 2),
-            used_gb=round((total - available), 2),
-            used_pct=round(real_used_pct, 2),
-            available_gb=round(available, 2),
+            total_gb=round(total_gb, 2) if total_gb is not None else None,
+            used_gb=None,
+            used_pct=None,
+            available_gb=round(available_gb, 2) if available_gb is not None else None,
         )
+
+    @staticmethod
+    def _resolve_available(mem: dict[str, int]) -> int | None:
+        # MemAvailable is the authoritative figure on modern kernels.
+        if "MemAvailable" in mem:
+            return mem["MemAvailable"]
+        # Fallback for pre-3.14 kernels / restricted containers. Only valid
+        # if at least one component is actually present; otherwise the
+        # answer is "unknown", not 0 (0 would read as 100% used).
+        components = [k for k in ("MemFree", "Buffers", "Cached") if k in mem]
+        if not components:
+            return None
+        return sum(mem[k] for k in components)
 
     def get_mem_data(self) -> dict[str, int]:
         mem_info: dict[str, int] = {}
 
-        try:
-            with open(self.memory_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-        except IOError:
-            # File unreadable / disappeared mid-run — nothing to parse.
-            return {}
+        # Fatal: if /proc/meminfo disappears or becomes unreadable mid-run,
+        # open() raises FileNotFoundError / PermissionError and we let it
+        # bubble up to LinuxCollector.
+        with open(self.memory_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
 
         for line in lines:
             parts = line.split(":", 1)

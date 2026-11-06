@@ -27,6 +27,7 @@ def format_total_data(total_bytes):
         total_bytes /= 1024.0
     return f"{total_bytes:.2f} PB"
 
+
 def format_disk_speed(bytes_per_second: float) -> str:
     """Formats a raw bytes/sec rate as a human-readable disk I/O speed.
 
@@ -46,13 +47,7 @@ def format_disk_speed(bytes_per_second: float) -> str:
 
 
 def format_disk_size(bytes_val: int | float | None) -> str:
-    """Formats a raw byte count as a human-readable disk size (binary base 1024).
-
-    This is `format_total_data` with a shorter label set ("B" instead of
-    "Bytes") so it reads well next to the Disk Space rows. Kept as a distinct
-    helper because the disk-space UI will never reach the PB range and the
-    label width matters more here than in the network totals.
-    """
+    """Formats a raw byte count as a human-readable disk size (binary base 1024)."""
     if bytes_val is None or bytes_val < 0:
         return "N/A"
     for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -60,6 +55,7 @@ def format_disk_size(bytes_val: int | float | None) -> str:
             return f"{bytes_val:.2f} {unit}"
         bytes_val /= 1024.0
     return f"{bytes_val:.2f} PB"
+
 
 def print_side_by_side(left_lines, right_lines):
     """Prints two lists of strings next to each other, dynamically sizing to the terminal."""
@@ -96,17 +92,218 @@ def print_side_by_side(left_lines, right_lines):
     print(f"╚{'═' * (left_width + 2)}╧{'═' * (right_width + 2)}╝")
 
 
-def _sampler_state(data, kind: str):
-    """Read (is_ready, has_known_devices, last_error) from the sampler.
+# =====================================================================
+# DATA LAYER — samples the system. Never renders. Never raises.
+# =====================================================================
+def gather_snapshots(data) -> dict:
+    """Call every sampler method once. Failures are captured, never raised.
 
-    Falls back to (True, True, None) so this works transparently with
-    PsutilCollector (which has no raw samplers) or older sampler versions
-    that don't yet expose the state properties.
+    Returns a dict keyed by subsystem name. Each value is a tuple:
+        (result, error_str)
+    where `result` is whatever the sampler returned (snapshot object,
+    None for no-hardware, or [] for first-tick), and `error_str` is None
+    on success or str(exception) if the call raised.
+
+    This is the ONLY place in main.py that touches `data`. Rendering
+    happens strictly downstream of this function.
     """
-    sampler = getattr(data, f"{kind}_sampler", None)
-    if sampler is None or not hasattr(sampler, "is_ready"):
-        return (True, True, None)
-    return (sampler.is_ready, sampler.has_known_devices, sampler.last_error)
+    snapshots: dict = {}
+
+    try: snapshots["cpu"] = (data.get_cpu_snapshot(), None)
+    except Exception as e: snapshots["cpu"] = (None, str(e))
+
+    try: snapshots["memory"] = (data.get_memory_snapshot(), None)
+    except Exception as e: snapshots["memory"] = (None, str(e))
+
+    try: snapshots["battery"] = (data.get_battery_snapshot(), None)
+    except Exception as e: snapshots["battery"] = (None, str(e))
+
+    try: snapshots["thermal"] = (data.get_thermal_snapshot(), None)
+    except Exception as e: snapshots["thermal"] = (None, str(e))
+
+    try: snapshots["disk_io"] = (data.get_disk_io_snapshot(), None)
+    except Exception as e: snapshots["disk_io"] = (None, str(e))
+
+    try: snapshots["disk_space"] = (data.get_disk_space_snapshot(), None)
+    except Exception as e: snapshots["disk_space"] = (None, str(e))
+
+    try: snapshots["network"] = (data.get_network_snapshot(), None)
+    except Exception as e: snapshots["network"] = (None, str(e))
+
+    return snapshots
+
+
+# =====================================================================
+# UI LAYER — pure rendering. Never touches `data`.
+# =====================================================================
+def build_dashboard(
+    snapshots: dict,
+    sys_type: str,
+    fallback_active: bool,
+    fallback_reason,
+    degraded_subsystems: list[str],
+) -> tuple[list[str], list[str]]:
+    """Render both dashboard columns from a pre-gathered snapshots dict.
+
+    Pure function: no sampling, no I/O, no reference to the collector.
+    Every datum shown comes from `snapshots`.
+    """
+    cpu, cpu_error = snapshots["cpu"]
+    memory, memory_error = snapshots["memory"]
+    battery, battery_error = snapshots["battery"]
+    thermal, thermal_error = snapshots["thermal"]
+    disk_io, disk_io_error = snapshots["disk_io"]
+    disk_space, disk_space_error = snapshots["disk_space"]
+    network_data, network_error = snapshots["network"]
+
+    left_col: list[str] = []
+    right_col: list[str] = []
+
+    # ==========================================
+    # LEFT COLUMN (System & Hardware)
+    # ==========================================
+    left_col.append("SYSTEM & HARDWARE")
+    left_col.append("─────────────────────────────")
+
+    if fallback_active:
+        left_col.append(f"Engine Mode:  FALLBACK ({fallback_reason})")
+    elif sys_type != "Linux":
+        left_col.append(f"Engine Mode:  {sys_type} (psutil)")
+    elif degraded_subsystems:
+        left_col.append("Engine Mode:  Linux Native (degraded)")
+        left_col.append(f"  Missing:    {', '.join(degraded_subsystems)}")
+    else:
+        left_col.append("Engine Mode:  Linux Native (/proc)")
+    left_col.append("")
+
+    # CPU & Memory
+    left_col.append("CPU & MEMORY")
+    if cpu is None:
+        left_col.append("  CPU Usage:  Unavailable")
+    else:
+        left_col.append(f"  CPU Usage:  {cpu.usage_pct}%")
+
+    if memory is None:
+        left_col.append("  Memory:     Unavailable")
+    else:
+        left_col.append(f"  Memory:     {memory.used_pct}% ({memory.used_gb:.2f} GB / {memory.total_gb:.2f} GB)")
+    left_col.append("")
+
+    # Battery
+    left_col.append("BATTERY")
+    if battery_error is not None:
+        left_col.append("  Status:     Unavailable")
+    elif battery is None:
+        left_col.append("  Status:     Not Detected")
+    else:
+        left_col.append(f"  Status:     {battery.status}")
+        cap_str = f"{battery.capacity}%" if battery.capacity is not None else "N/A"
+        health_str = f"{battery.health_percent:.1f}%" if battery.health_percent is not None else "N/A"
+        left_col.append(f"  Capacity:   {cap_str}  (Health: {health_str})")
+
+        draw_str = f"{battery.power_watts:.2f} W" if battery.power_watts is not None else "N/A"
+        if battery.status == "Discharging" and battery.hours_left is not None and battery.hours_left > 0:
+            hrs = int(battery.hours_left)
+            mins = int((battery.hours_left - hrs) * 60)
+            time_str = f"{hrs}h {mins}m remaining"
+        elif battery.status in ("Charging", "Full", "Not charging") or battery.online:
+            time_str = "Wall Power (AC)"
+        else:
+            time_str = "N/A"
+        left_col.append(f"  Power:      {draw_str}")
+        left_col.append(f"  Time Est:   {time_str}")
+    left_col.append("")
+
+    # Thermal
+    left_col.append("THERMAL & GPU")
+    if thermal is None:
+        left_col.append("  Status:     Unavailable")
+    else:
+        if thermal.sensor_available:
+            cpu_t = f"{thermal.cpu_temp}°C" if thermal.cpu_temp is not None else "N/A"
+            cpu_m = f"{thermal.cpu_temp_max}°C" if thermal.cpu_temp_max is not None else "N/A"
+            left_col.append(f"  CPU Temp:   {cpu_t} (Max: {cpu_m})")
+
+            if thermal.system_fans:
+                for fan, rpm in thermal.system_fans.items():
+                    left_col.append(f"  {fan.capitalize()}:{' ' * (10 - len(fan))} {rpm} RPM")
+        else:
+            left_col.append("  Sensor:     Unavailable")
+
+        if thermal.gpu_available:
+            if thermal.gpus:
+                for gpu in thermal.gpus:
+                    temp = f"{gpu.temperature_c}°C" if gpu.temperature_c is not None else "N/A"
+                    util = f"{gpu.utilization_pct}%" if gpu.utilization_pct is not None else "N/A"
+                    watt = f"{gpu.power_w}W" if gpu.power_w is not None else "N/A"
+                    left_col.append(f"  GPU [{gpu.index}]:     {gpu.name}")
+                    left_col.append(f"    {temp} | {util} | {watt}")
+            else:
+                left_col.append("  GPU:        N/A")
+        else:
+            left_col.append("  GPU:        Not Detected")
+
+    # ==========================================
+    # RIGHT COLUMN (I/O & Network)
+    # ==========================================
+    right_col.append("I/O & NETWORK")
+    right_col.append("─────────────────────────────")
+    right_col.append("")
+
+    # Disk Space
+    right_col.append("DISK SPACE")
+    if disk_space_error is not None:
+        right_col.append(f"  Status:     Unavailable — {disk_space_error}")
+    elif disk_space is not None:
+        if disk_space.total_bytes is None:
+            right_col.append("  Status:     Unavailable (read failed)")
+        else:
+            right_col.append(f"  Total:      {format_disk_size(disk_space.total_bytes)}")
+            right_col.append(f"  Used:       {format_disk_size(disk_space.used_bytes)}  ({disk_space.percent}%)")
+            right_col.append(f"  Free:       {format_disk_size(disk_space.free_bytes)}")
+    right_col.append("")
+
+    # Disk I/O
+    right_col.append("DISK I/O")
+    if disk_io_error is not None:
+        right_col.append(f"  Status:     Unavailable — {disk_io_error}")
+    elif disk_io is None:
+        right_col.append("  Status:     Unavailable")
+    elif disk_io == []:
+        right_col.append("  Status:     Initializing (1s delta)")
+    else:
+        for io in disk_io:
+            right_col.append(f"  {io.device}:")
+            right_col.append(f"    Read:  {format_disk_speed(io.read_bps)}")
+            right_col.append(f"    Write: {format_disk_speed(io.write_bps)}")
+    right_col.append("")
+
+    # Network
+    right_col.append("NETWORK")
+    if network_error is not None:
+        right_col.append(f"  Status:     Unavailable — {network_error}")
+    elif network_data is None:
+        right_col.append("  Status:     Unavailable")
+    elif network_data == []:
+        right_col.append("  Status:     Initializing (1s delta)")
+    else:
+        for item in network_data:
+            right_col.append(f"  {item.interface} ({item.status})")
+            if item.status == "CONNECTED":
+                down = format_speed_bits(item.download_bps)
+                up = format_speed_bits(item.upload_bps)
+                right_col.append(f"    ↓ {down} | ↑ {up}")
+                right_col.append(f"    Total Rx Err/Drop: {item.rx_errors} / {item.rx_drops}")
+                right_col.append(f"    Total Tx Err/Drop: {item.tx_errors} / {item.tx_drops}")
+                right_col.append(f"    Total Data:  {format_total_data(item.total_bytes)}")
+            elif item.status == "CONNECTING":
+                right_col.append("    Initializing link...")
+                right_col.append(f"    Total Data:  {format_total_data(item.total_bytes)}")
+            else:
+                right_col.append("    Offline / Unplugged")
+            right_col.append("")
+
+    return left_col, right_col
 
 
 def main():
@@ -123,9 +320,9 @@ def main():
             fallback_active = True
             fallback_reason = type(e).__name__
         else:
-            if hasattr(data, "sampler_status"):
+            if hasattr(data, "get_system_health"):
                 degraded_subsystems = [
-                    name for name, err in data.sampler_status().items()
+                    name for name, err in data.get_system_health().items()
                     if err is not None
                 ]
     else:
@@ -133,200 +330,22 @@ def main():
 
     clear_command = 'cls' if sys_type == "Windows" else 'clear'
 
+    # Splash: give the user visible feedback during the very first sample.
+    # Without this, the terminal is blank for ~1s while the samplers
+    # prime their baselines (disk/network first tick, `sensors -j` subprocess).
+    os.system(clear_command)
+    print("Initializing... gathering first samples (this may take a moment)")
+
     try:
         while True:
-            try: cpu, cpu_error = data.get_cpu_snapshot(), None
-            except Exception as e: cpu, cpu_error = None, str(e)
-
-            try: memory, memory_error = data.get_memory_snapshot(), None
-            except Exception as e: memory, memory_error = None, str(e)
-
-            try: battery, battery_error = data.get_battery_snapshot(), None
-            except Exception as e: battery, battery_error = None, str(e)
-
-            try: thermal, thermal_error = data.get_thermal_snapshot(), None
-            except Exception as e: thermal, thermal_error = None, str(e)
-
-            try: disk_io, disk_io_error = data.get_disk_io_snapshot(), None
-            except Exception as e: disk_io, disk_io_error = None, str(e)
-
-            try: disk_space, disk_space_error = data.get_disk_space_snapshot(), None
-            except Exception as e: disk_space, disk_space_error = None, str(e)
-
-            try: network_data, network_error = data.get_network_snapshot(), None
-            except Exception as e: network_data, network_error = None, str(e)
-
-            os.system(clear_command)
-
-            left_col = []
-            right_col = []
-
-            # ==========================================
-            # LEFT COLUMN (System & Hardware)
-            # ==========================================
-            left_col.append("SYSTEM & HARDWARE")
-            left_col.append("─────────────────────────────")
-
-            if fallback_active:
-                left_col.append(f"Engine Mode:  FALLBACK ({fallback_reason})")
-            elif sys_type != "Linux":
-                left_col.append(f"Engine Mode:  {sys_type} (psutil)")
-            elif degraded_subsystems:
-                left_col.append("Engine Mode:  Linux Native (degraded)")
-                left_col.append(f"  Missing:    {', '.join(degraded_subsystems)}")
-            else:
-                left_col.append("Engine Mode:  Linux Native (/proc)")
-            left_col.append("")
-
-            # CPU & Memory
-            left_col.append("CPU & MEMORY")
-            if cpu is None:
-                left_col.append("  CPU Usage:  Unavailable")
-            else:
-                left_col.append(f"  CPU Usage:  {cpu.usage_pct}%")
-
-            if memory is None:
-                left_col.append("  Memory:     Unavailable")
-            else:
-                left_col.append(f"  Memory:     {memory.used_pct}% ({memory.used_gb:.2f} GB / {memory.total_gb:.2f} GB)")
-            left_col.append("")
-
-            # Battery
-            left_col.append("BATTERY")
-            if battery_error is not None:
-                left_col.append("  Status:     Unavailable")
-            elif battery is None:
-                left_col.append("  Status:     Not Detected")
-            else:
-                left_col.append(f"  Status:     {battery.status}")
-                cap_str = f"{battery.capacity}%" if battery.capacity is not None else "N/A"
-                health_str = f"{battery.health_percent:.1f}%" if battery.health_percent is not None else "N/A"
-                left_col.append(f"  Capacity:   {cap_str}  (Health: {health_str})")
-
-                draw_str = f"{battery.power_watts:.2f} W" if battery.power_watts is not None else "N/A"
-                if battery.status == "Discharging" and battery.hours_left is not None and battery.hours_left > 0:
-                    hrs = int(battery.hours_left)
-                    mins = int((battery.hours_left - hrs) * 60)
-                    time_str = f"{hrs}h {mins}m remaining"
-                elif battery.status in ("Charging", "Full", "Not charging") or battery.online:
-                    time_str = "Wall Power (AC)"
-                else:
-                    time_str = "N/A"
-                left_col.append(f"  Power:      {draw_str}")
-                left_col.append(f"  Time Est:   {time_str}")
-            left_col.append("")
-
-            # Thermal
-            left_col.append("THERMAL & GPU")
-            if thermal is None:
-                left_col.append("  Status:     Unavailable")
-            else:
-                if thermal.sensor_available:
-                    cpu_t = f"{thermal.cpu_temp}°C" if thermal.cpu_temp is not None else "N/A"
-                    cpu_m = f"{thermal.cpu_temp_max}°C" if thermal.cpu_temp_max is not None else "N/A"
-                    left_col.append(f"  CPU Temp:   {cpu_t} (Max: {cpu_m})")
-
-                    if thermal.system_fans:
-                        for fan, rpm in thermal.system_fans.items():
-                            left_col.append(f"  {fan.capitalize()}:{' ' * (10 - len(fan))} {rpm} RPM")
-                else:
-                    left_col.append(f"  Sensor:     {thermal.sensor_error}")
-
-                if thermal.gpu_available:
-                    if thermal.gpus:
-                        for gpu in thermal.gpus:
-                            temp = f"{gpu.temperature_c}°C" if gpu.temperature_c is not None else "N/A"
-                            util = f"{gpu.utilization_pct}%" if gpu.utilization_pct is not None else "N/A"
-                            watt = f"{gpu.power_w}W" if gpu.power_w is not None else "N/A"
-                            left_col.append(f"  GPU [{gpu.index}]:     {gpu.name}")
-                            left_col.append(f"    {temp} | {util} | {watt}")
-                    else:
-                        left_col.append("  GPU:        N/A")
-                else:
-                    err = thermal.gpu_error or "Unavailable"
-                    left_col.append(f"  GPU:        {err}")
-
-            # ==========================================
-            # RIGHT COLUMN (I/O & Network)
-            # ==========================================
-            right_col.append("I/O & NETWORK")
-            right_col.append("─────────────────────────────")
-            right_col.append("")
-
-            # Disk Space
-            right_col.append("DISK SPACE")
-            if disk_space_error is not None:
-                right_col.append(f"  Status:     Unavailable — {disk_space_error}")
-            elif disk_space is not None:
-                if disk_space.total_bytes is None:
-                    right_col.append("  Status:     Unavailable (read failed)")
-                else:
-                    right_col.append(f"  Total:      {format_disk_size(disk_space.total_bytes)}")
-                    right_col.append(f"  Used:       {format_disk_size(disk_space.used_bytes)}  ({disk_space.percent}%)")
-                    right_col.append(f"  Free:       {format_disk_size(disk_space.free_bytes)}")
-            right_col.append("")
-
-            # Disk I/O
-            right_col.append("DISK I/O")
-            if disk_io_error is not None:
-                right_col.append(f"  Status:     Unavailable — {disk_io_error}")
-            elif disk_io is not None:
-                is_ready, has_devices, last_err = _sampler_state(data, "disk")
-                if last_err is not None:
-                    right_col.append(f"  Status:     Unavailable ({last_err.value})")
-                elif not is_ready:
-                    right_col.append("  Status:     Initializing (1s delta)")
-                elif not has_devices:
-                    right_col.append("  Status:     No physical devices detected")
-                elif not disk_io:
-                    right_col.append("  Status:     Idle")
-                else:
-                    for io in disk_io:
-                        right_col.append(f"  {io.device}:")
-                        right_col.append(f"    Read:  {format_disk_speed(io.read_bps)}")
-                        right_col.append(f"    Write: {format_disk_speed(io.write_bps)}")
-            right_col.append("")
-            
-            # Network
-            right_col.append("NETWORK")
-            if network_error is not None:
-                right_col.append(f"  Status:     Unavailable — {network_error}")
-            elif network_data is not None:
-                is_ready, has_devices, last_err = _sampler_state(data, "network")
-                if last_err is not None:
-                    right_col.append(f"  Status:     Unavailable ({last_err.value})")
-                elif not is_ready:
-                    right_col.append("  Status:     Initializing (1s delta)")
-                elif not has_devices:
-                    right_col.append("  Status:     No interfaces detected")
-                elif not network_data:
-                    right_col.append("  Status:     Idle")
-                else:
-                    for item in network_data:
-                        right_col.append(f"  {item.interface} ({item.status})")
-                        if item.status == "CONNECTED":
-                            down = format_speed_bits(item.download_bps)
-                            up = format_speed_bits(item.upload_bps)
-                            right_col.append(f"    ↓ {down} | ↑ {up}")
-                            right_col.append(f"    Total Rx Err/Drop: {item.rx_errors} / {item.rx_drops}")
-                            right_col.append(f"    Total Tx Err/Drop: {item.tx_errors} / {item.tx_drops}")
-                            right_col.append(f"    Total Data:  {format_total_data(item.total_bytes)}")
-                        elif item.status == "CONNECTING":
-                            right_col.append("    Initializing link...")
-                            right_col.append(f"    Total Data:  {format_total_data(item.total_bytes)}")
-                        else:
-                            right_col.append("    Offline / Unplugged")
-                        right_col.append("")
-
-            # ==========================================
-            # PRINT EVERYTHING
-            # ==========================================
+            snapshots = gather_snapshots(data)   # DATA — may take ~1s
+            os.system(clear_command)             # UI — clear only after data ready
+            left_col, right_col = build_dashboard(
+                snapshots, sys_type, fallback_active, fallback_reason, degraded_subsystems
+            )                                     # UI — pure render
             print_side_by_side(left_col, right_col)
-
             print("\n Press Ctrl+C to exit.")
-
             time.sleep(1)
-
     except KeyboardInterrupt:
         print("\nProgram interrupted. Exiting gracefully.")
 

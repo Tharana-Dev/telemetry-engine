@@ -1,65 +1,68 @@
 from engine.models import CpuSnapshot
-import time
-import os
 
 
 class LinuxCpuSampler:
     def __init__(self, stat_path: str = "/proc/stat"):
         self.stat_path = stat_path
-        self._last_total = 0.0
-        self._last_idle = 0.0
+        self._last_total: float | None = None
+        self._last_idle: float | None = None
+        self._initialize_first_tick()
+
+    def _get_raw_times(self) -> tuple[float, float] | None:
+        # Fatal: if /proc/stat is missing or unreadable, the open() below
+        # raises FileNotFoundError / PermissionError and we let it bubble
+        # up to the LinuxCollector.
+        with open(self.stat_path, "r", encoding="utf-8") as f:
+            line = f.readline()
+
+        # Partial: empty file, malformed line, or missing fields -> None.
+        if not line:
+            return None
+
+        parts = line.split()
         try:
-            self._initialize_first_tick()
-        except FileNotFoundError:
-            pass  # File doesn't exist, leave as 0.0
-
-    def _get_raw_times(self) -> tuple[float, float]:
-        try:
-            with open(self.stat_path, "r", encoding="utf-8") as f:
-                line = f.readline()
-
-            if not line:
-                return 0.0, 0.0
-
-            parts = line.split()
             cpu_times = [float(x) for x in parts[1:]]
+        except ValueError:
+            return None
 
-            if len(cpu_times) < 5:
-                return 0.0, 0.0
+        if len(cpu_times) < 5:
+            return None
 
-            total = sum(cpu_times[:8])
-            idle = cpu_times[3] + cpu_times[4]
-
-            return total, idle
-        except (IOError, ValueError, IndexError):
-            return 0.0, 0.0
+        total = sum(cpu_times[:8])
+        idle = cpu_times[3] + cpu_times[4]
+        return total, idle
 
     def _initialize_first_tick(self) -> None:
-        # Early Health Check: Intentionally bypass the internal catch blocks
-        # so instantiation explicitly throws if the environment is restricted.
+        # Fatal health check: /proc/stat must exist and be non-empty at
+        # construction time. Explicitly bypass partial-error handling so
+        # instantiation throws if the environment is restricted.
         with open(self.stat_path, "r", encoding="utf-8") as f:
             first_line = f.readline()
-            if not first_line:
-                raise FileNotFoundError(f"Empty stat file at {self.stat_path}")
+        if not first_line:
+            raise FileNotFoundError(f"Empty stat file at {self.stat_path}")
 
-        # If the file verification passes, seed the primary parameters
-        self._last_total, self._last_idle = self._get_raw_times()
+        # Seed the baseline from a full parse. If the parse is partial
+        # (e.g. malformed counters), leave the baseline unset; the first
+        # good read in get_snapshot() will seed it.
+        raw = self._get_raw_times()
+        if raw is not None:
+            self._last_total, self._last_idle = raw
 
     def get_snapshot(self) -> CpuSnapshot:
-        current_total, current_idle = self._get_raw_times()
+        raw = self._get_raw_times()
 
-        # (0, 0) is _get_raw_times' sentinel for a failed read.
-        # Return early without touching the baseline — the next good read
-        # will compute its delta against the last *good* value, not against 0.
-        if current_total <= 0:
-            return CpuSnapshot(usage_pct=0.0)
+        # Partial read failure -> usage unknown, not 0.0.
+        if raw is None:
+            return CpuSnapshot(usage_pct=None)
 
-        # First successful read (e.g. __init__ hit FileNotFoundError, so the
-        # baseline was never seeded). Seed it now and report 0% for this tick.
-        if self._last_total <= 0:
+        current_total, current_idle = raw
+
+        # First successful read (init parse was partial) -> seed baseline
+        # and report unknown usage for this tick.
+        if self._last_total is None or self._last_idle is None:
             self._last_total = current_total
             self._last_idle = current_idle
-            return CpuSnapshot(usage_pct=0.0)
+            return CpuSnapshot(usage_pct=None)
 
         delta_total = current_total - self._last_total
         delta_idle = current_idle - self._last_idle
@@ -69,7 +72,7 @@ class LinuxCpuSampler:
 
         # Clock went backwards or the file was swapped — don't divide by <= 0.
         if delta_total <= 0:
-            return CpuSnapshot(usage_pct=0.0)
+            return CpuSnapshot(usage_pct=None)
 
         usage_pct = (1.0 - (delta_idle / delta_total)) * 100
 

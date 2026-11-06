@@ -5,38 +5,6 @@ from engine.linux_battery import LinuxBatterySampler
 from engine.linux_thermal import LinuxThermalSampler
 from engine.linux_disk import LinuxDiskSampler
 from engine.linux_network import LinuxNetworkSampler
-from engine.models import NetworkSnapshot  # re-exported for callers
-
-
-class SamplerUnavailableError(RuntimeError):
-    """The named sampler failed to initialize and therefore cannot be used.
-
-    Raised by ``LinuxCollector.get_*()`` when the underlying sampler was
-    never constructed (e.g. sysfs permission denied at construction time).
-    The original exception is preserved in ``.original`` so callers can
-    inspect or re-raise it if needed.
-    """
-
-    def __init__(self, name: str, original: BaseException | None) -> None:
-        detail = f"{type(original).__name__}: {original}" if original else "unknown"
-        super().__init__(f"{name} sampler unavailable ({detail})")
-        self.name = name
-        self.original = original
-
-
-class SamplerRuntimeError(RuntimeError):
-    """The named sampler was constructed, but its ``get_*()`` call failed.
-
-    Wraps the original exception so callers see a single actionable message
-    in ``str(e)`` while still being able to unwrap via ``.original`` or
-    ``__cause__``.
-    """
-
-    def __init__(self, name: str, original: BaseException) -> None:
-        super().__init__(f"{name} sampler error ({type(original).__name__}: {original})")
-        self.name = name
-        self.original = original
-
 
 class LinuxCollector(BaseSystemCollector):
     def __init__(self) -> None:
@@ -98,11 +66,12 @@ class LinuxCollector(BaseSystemCollector):
         - Sampler raised mid-call    -> SamplerRuntimeError (chains original)
         """
         if sampler is None:
-            raise SamplerUnavailableError(name, init_error)
+           return None
         try:
             return getattr(sampler, method_name)()
         except Exception as e:
-            raise SamplerRuntimeError(name, e) from e
+            #TODO add loggin
+            return None
     
     def sampler_status(self) -> dict[str, BaseException | None]:
         """Per-sampler init status: None = healthy, exception = failed.
@@ -142,3 +111,9 @@ class LinuxCollector(BaseSystemCollector):
     def get_network_snapshot(self):
         return self._call("network", self.network_sampler, self._network_init_error,
                           "get_network_snapshot")
+    
+    def get_system_health(self) -> dict[str, str | None]:
+        health: dict[str, str | None] = {}
+        for name, exc in self.sampler_status().items(): 
+            health[name] = None if exc is None else str(exc)
+        return health

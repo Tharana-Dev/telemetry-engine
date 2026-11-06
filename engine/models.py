@@ -1,23 +1,21 @@
 from dataclasses import dataclass, field
-from typing import Any
-from enum import Enum
 
 @dataclass(frozen=True)
 class MemorySnapshot:
-    total_gb: float
-    used_gb: float
-    used_pct: float
-    available_gb: float
+    total_gb: float | None
+    used_gb: float | None
+    used_pct: float | None
+    available_gb: float | None
 
 @dataclass(frozen=True)
 class CpuSnapshot:
-    usage_pct: float
+    usage_pct: float | None
     
 @dataclass(frozen=True)
 class BatterySnapshot:
     # 1. Main Status & Core Metrics
-    online: bool                       # From AC1/online (True if wall power is connected)
-    status: str                        # From BAT1/status ('Charging', 'Discharging', 'Full', 'N/A')
+    online: bool | None                       # From AC1/online (True if wall power is connected)
+    status: str | None                        # From BAT1/status ('Charging', 'Discharging', 'Full', 'N/A')
     capacity: int | None               # From BAT1/capacity (0-100% fuel gauge); None if missing
 
     # 2. Live Power Dynamics
@@ -27,8 +25,8 @@ class BatterySnapshot:
 
 @dataclass(frozen=True)
 class GpuInfo:
-    index: int
-    name: str
+    index: int | None
+    name: str | None
     temperature_c: float | None
     utilization_pct: int | None
     power_w: float | None
@@ -63,9 +61,9 @@ class ThermalSnapshot:
 
 @dataclass(frozen=True)
 class DiskIOSnapshot:
-    device: str
-    read_bps: float          # raw bytes/sec
-    write_bps: float         # raw bytes/sec
+    device: str | None
+    read_bps: float | None          # raw bytes/sec
+    write_bps: float | None         # raw bytes/sec
 
 
 @dataclass(frozen=True)
@@ -77,12 +75,12 @@ class DiskSpaceSnapshot:
 
 @dataclass(frozen=True)
 class NetworkSnapshot:
-    interface: str
-    status: str
-    download_bps: float
-    upload_bps: float
-    rx_errors: int
-    tx_errors: int
-    rx_drops: int
-    tx_drops: int
-    total_bytes: float
+    interface: str | None
+    status: str | None
+    download_bps: float | None
+    upload_bps: float | None
+    rx_errors: int | None
+    tx_errors: int | None
+    rx_drops: int | None
+    tx_drops: int | None
+    total_bytes: int | None

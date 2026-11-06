@@ -69,7 +69,11 @@ class PsutilCollector(BaseSystemCollector):
 
     def get_disk_space_snapshot(self) -> DiskSpaceSnapshot:
         # TODO: Implement Windows/Mac disk space later
-        return DiskSpaceSnapshot(total_gb=0.0, used_gb=0.0, free_gb=0.0, percent=0.0)
+        return []
     
     def get_network_snapshot(self):
         return [] # TODO: Implement Windows/Mac fallback
+    
+    def get_system_health(self) -> dict[str, str | None]:
+        #TODO - For Now Dummy
+        return {"cpu": None, "memory": None, "battery": None, "thermal": None, "disk": None, "network": None}

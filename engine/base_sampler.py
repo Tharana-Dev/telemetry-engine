@@ -29,3 +29,7 @@ class BaseSystemCollector(ABC):
     @abstractmethod
     def get_network_snapshot(self) -> list[NetworkSnapshot]: 
         ...
+        
+    @abstractmethod
+    def get_system_health(self) -> dict[str, str | None]: 
+        ...
