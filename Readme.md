@@ -1,25 +1,28 @@
 # Telemetry Engine
 
-A high-performance, cross-platform system telemetry engine written in Python. It extracts deep system metrics by hooking directly into the Linux kernel virtual filesystem (`/proc` and `/sys`), utilizing `nvidia-ml-py` for direct GPU driver access, and providing a graceful `psutil` fallback for Windows, macOS, and restricted environments.
+A high-performance, system telemetry engine written in Python. The Linux engine is fully functional, extracting deep system metrics directly from the kernel virtual filesystem (`/proc` and `/sys`), utilizing `nvidia-ml-py` for direct GPU driver access, and implementing advanced fault tolerance. 
+
+**Note:** The cross-platform (`psutil`) driver for Windows and macOS is currently a **stub (dummy implementation)** and is the next phase of development. Deep thermal and hardware metrics are currently Linux-only.
 
 ---
 
-## 🔥 Key Features
+## 🔥 Key Features (Linux)
 
-- **Cross-Platform Hardware Abstraction Layer (HAL):** Built on an Abstract Base Class (ABC) contract. The UI doesn't know or care if the data is coming from Linux kernel files, C-bindings, or Windows C-APIs; it just asks for the metrics.
+- **Cross-Platform Hardware Abstraction Layer (HAL):** Built on an Abstract Base Class (ABC) contract. The UI asks for metrics via the contract without knowing *how* they are fetched.
 - **Linux Kernel-Direct Hooking:** Reads natively from `/proc/stat`, `/proc/meminfo`, `/proc/diskstats`, `/proc/net/dev`, and `/sys/class/power_supply/` to capture bare-metal statistics.
 - **Zero-Latency Thermal Caching:** NVML initialization is handled once in `__init__`, and `sensors` results are cached for 3 seconds. Cached thermal hits cost `~0.0008ms`, eliminating subprocess blocking from the main loop.
 - **Direct GPU Telemetry via NVML:** Supports multi-GPU setups using a `GpuInfo` dataclass, queries temperature, utilization, and power draw directly from the driver, and handles laptop Embedded Controller (EC) fan restrictions.
 - **Resilient Battery Diagnostics:** Calculates real-time power draw (Watts), time remaining, and hardware degradation (Health %), with fallbacks for both `energy_*` and `charge_*` sysfs paths.
-- **The Result Pattern (Fault Tolerance):** Hardware queries are wrapped in an `InternalResult` dataclass. If a driver crashes or a tool is missing, the engine returns a specific error enum instead of crashing.
+- **Unified Exception Boundary:** Samplers throw standard exceptions (e.g., `FileNotFoundError`) or return `None` for partial failures. The `LinuxCollector` catches all exceptions at the boundary, ensuring one failing hardware component never crashes the entire dashboard.
 
 ---
 
 ## ⚠️ Known Limitations
 
+- **Cross-Platform Support is a Stub:** Windows and macOS currently use a dummy `PsutilCollector`. It does not yet implement the full HAL contract for disk, network, or thermal metrics. This is the next development milestone.
 - **WSL (Windows Subsystem for Linux) Restrictions:** 
-  - **Thermal Sensors:** WSL does not pass physical motherboard sensors through to the Linux kernel. CPU and Motherboard temperatures will safely fall back to `N/A`.
-  - **Network:** WSL network interfaces (`eth0`) represent virtualized Hyper-V switches, not the physical Wi-Fi or Ethernet card.
+  - **Thermal Sensors:** WSL does not pass physical motherboard sensors through to the Linux kernel.
+  - **Network:** WSL network interfaces (`eth0`) represent virtualized Hyper-V switches.
 - **Laptop Fan Speeds:** On almost all laptops, physical fans are controlled by the motherboard's Embedded Controller (EC). `pynvml` will return `N/A` for laptop dGPU fans.
 - **Cross-Platform Thermals:** `psutil` does not expose CPU temperatures or fan speeds on Windows/macOS natively. Deep thermal telemetry is currently a Linux-only feature.
 - **Disk Space Scope:** The engine only monitors the primary root partition (`/` on Linux, `C:\` on Windows).
@@ -34,7 +37,6 @@ telemetry-engine/
 │   ├── __init__.py
 │   ├── base_sampler.py    # Abstract Base Class (HAL contract)
 │   ├── models.py          # Dataclasses for strict type enforcement
-│   ├── results_and_errors.py # Enums for fault tolerance
 │   ├── linux_cpu.py       # Direct parsing for kernel scheduling
 │   ├── linux_memory.py    # Memory structural parser
 │   ├── linux_battery.py   # ACPI/sysfs battery parsing
@@ -42,7 +44,7 @@ telemetry-engine/
 │   ├── linux_disk.py      # /proc/diskstats parsing & space telemetry
 │   ├── linux_network.py   # /proc/net/dev parsing
 │   ├── linux_sampler.py   # Linux adapter bridging the HAL to raw parsers
-│   └── psutil_sampler.py  # Universal cross-platform fallback driver
+│   └── psutil_sampler.py  # Universal cross-platform fallback (Stub)
 ├── tests/
 │   ├── fixtures/
 │   ├── test_cpu.py        
@@ -65,7 +67,7 @@ telemetry-engine/
 
 ### Prerequisites
 
-- **OS:** Linux (Ubuntu, Debian, Fedora, RHEL, or WSL2) OR Windows/macOS via `psutil`.
+- **OS:** Linux (Ubuntu, Debian, Fedora, RHEL, or WSL2).
 - **Python:** 3.10 or higher.
 - **Optional (Linux Thermals):** `lm-sensors` package (`sudo apt install lm-sensors`) and proprietary NVIDIA drivers.
 
@@ -131,7 +133,6 @@ python3 main.py
 
 The repository includes `benchmark.py`, an automated profiling script that measures execution time (`time.perf_counter_ns`) and memory allocations (`tracemalloc`) across all samplers.
 
-To run it:
 ```bash
 python3 benchmark.py
 ```
@@ -147,8 +148,6 @@ By moving `pynvml.nvmlInit()` to the constructor and implementing a 3-second cac
 | Disk I/O | 0.22 ms | 0.22 ms |
 | Network | 0.11 ms | 0.17 ms |
 | **Thermal** | **166.34 ms** | **0.0008 ms** |
-
-*(Note: The first thermal tick still incurs the subprocess cold-start cost, but the cache guarantees zero blocking for the subsequent two seconds).*
 
 ---
 
