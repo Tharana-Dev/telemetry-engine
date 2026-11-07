@@ -1,34 +1,30 @@
-from engine.models import BatterySnapshot, CpuSnapshot, DiskIOSnapshot, MemorySnapshot, NetworkSnapshot, ThermalSnapshot, DiskIOSnapshot, DiskSpaceSnapshot
+from engine.models import (
+    BatterySnapshot, CpuSnapshot, DiskIOSnapshot, MemorySnapshot, 
+    NetworkSnapshot, ThermalSnapshot, DiskSpaceSnapshot
+)
 from engine.base_sampler import BaseSystemCollector
 import psutil
 
 
 class PsutilCollector(BaseSystemCollector):
     def __init__(self) -> None:
-        ...
+        # Prime the CPU baseline so the first real read isn't 0.0
+        psutil.cpu_percent()
     
     def get_cpu_snapshot(self) -> CpuSnapshot:
-        return CpuSnapshot(
-            usage_pct= psutil.cpu_percent()
-        )
+        return CpuSnapshot(usage_pct=psutil.cpu_percent())
     
     def get_memory_snapshot(self) -> MemorySnapshot:
         mem = psutil.virtual_memory()
-        total_gb = round(mem.total / (1024**3), 2)
-        used_gb = round(mem.used / (1024**3), 2)
-        available_gb = round(mem.available / (1024**3), 2)
-        used_pct = round(mem.percent, 2)  # psutil already gives this as a percentage float
-        
         return MemorySnapshot(
-            total_gb=total_gb,
-            used_gb=used_gb,
-            used_pct=used_pct,
-            available_gb=available_gb
-    )
+            total_gb=round(mem.total / (1024**3), 2),
+            used_gb=round(mem.used / (1024**3), 2),
+            available_gb=round(mem.available / (1024**3), 2),
+            used_pct=round(mem.percent, 2)
+        )
     
     def get_battery_snapshot(self) -> BatterySnapshot | None:
         battery = psutil.sensors_battery()
-        
         if battery is None:
             return None
         
@@ -39,41 +35,37 @@ class PsutilCollector(BaseSystemCollector):
             online = False
             status = "Discharging"
         
-        hours_left = 0.0 if battery.secsleft in (-1,-2) or battery.secsleft <0 else round(battery.secsleft / 3600, 2)
-        
-        #FallBack
-        
-        power_watts = 0.0
-        health_percent = 100.0
+        hours_left = None
+        if battery.secsleft not in (-1, -2) and battery.secsleft >= 0:
+            hours_left = round(battery.secsleft / 3600, 2)
         
         return BatterySnapshot(
             online=online,
             status=status,
             capacity=int(battery.percent),
-            power_watts=power_watts,
-            hours_left= hours_left,
-            health_percent= health_percent
+            power_watts=None,       # Not available on Windows psutil
+            hours_left=hours_left,
+            health_percent=None     # Not available on Windows psutil
         )    
 
     def get_thermal_snapshot(self) -> ThermalSnapshot:
         return ThermalSnapshot(
             gpu_available=False, 
             sensor_available=False,
-            sensor_error="Thermal sensors not yet supported on this platform."
+            sensor_error="Thermal sensors not supported on this platform."
         )
 
-
     def get_disk_io_snapshot(self) -> list[DiskIOSnapshot]:
-        # TODO: Implement Windows/Mac disk I/O fallback later
-        return []
+        return []  # Empty list = "Initializing" (until we build the real implementation)
 
     def get_disk_space_snapshot(self) -> DiskSpaceSnapshot:
-        # TODO: Implement Windows/Mac disk space later
-        return []
+        # We return a valid dataclass so the UI doesn't crash
+        return DiskSpaceSnapshot(
+            total_bytes=None, used_bytes=None, free_bytes=None, percent=None
+        )
     
-    def get_network_snapshot(self):
-        return [] # TODO: Implement Windows/Mac fallback
+    def get_network_snapshot(self) -> list[NetworkSnapshot]:
+        return []  # Empty list = "Initializing"
     
     def get_system_health(self) -> dict[str, str | None]:
-        #TODO - For Now Dummy
         return {"cpu": None, "memory": None, "battery": None, "thermal": None, "disk": None, "network": None}
