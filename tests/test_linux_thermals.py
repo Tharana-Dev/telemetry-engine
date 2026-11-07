@@ -75,11 +75,7 @@ def _sensor_data(
     cpu_vendor=None,
     board_vendor=None,
 ):
-    """Return the dict shape that _get_sensors() produces.
-
-    Vendors default to None (matching the refactored dataclass defaults);
-    callers that want specific values pass them explicitly.
-    """
+    """Return the dict shape that _get_sensors() produces."""
     return {
         "cpu_temp": cpu_temp,
         "cpu_max": cpu_max,
@@ -101,17 +97,15 @@ def test_nvml_init_success_state():
 
 
 @pytest.mark.parametrize("exc", [
-    pynvml.NVMLError("boom"),          # was: Errors.PYNVML_ERROR
-    RuntimeError("boom"),               # was: Errors.UNKNOWN
-    Exception("boom"),                  # catches anything
+    # NVMLError must be constructed with a *numeric* error code —
+    # its __str__ falls back to "%d format" on .value when nvmlErrorString
+    # is unavailable, so a string code raises TypeError on logging.
+    pynvml.NVMLError(pynvml.NVML_ERROR_UNINITIALIZED),
+    RuntimeError("boom"),
+    Exception("boom"),
 ])
 def test_nvml_init_failure_leaves_uninitialized(exc):
-    """All init failures now collapse to initialized=False.
-
-    The fine-grained classification (NOT_PRESENT / BROKEN_DRIVER /
-    PYNVML_ERROR / UNKNOWN) was carried by _nvml_init_error + Errors,
-    both removed. The caller only needs to know "no GPU available".
-    """
+    """All init failures collapse to initialized=False."""
     with patch("pynvml.nvmlInit", side_effect=exc):
         sampler = LinuxThermalSampler()
 
@@ -119,7 +113,7 @@ def test_nvml_init_failure_leaves_uninitialized(exc):
 
 
 # ----------------------------------------------------------------
-# NVIDIA happy-path / multi-GPU (returns list[GpuInfo], not InternalResult)
+# NVIDIA happy-path / multi-GPU
 # ----------------------------------------------------------------
 
 def test_nvidia_happy_path():
@@ -171,12 +165,10 @@ def test_nvidia_multiple_gpus():
 
 
 # ----------------------------------------------------------------
-# NVIDIA per-metric NotSupported handling (partial -> None field)
+# NVIDIA per-metric NotSupported handling
 # ----------------------------------------------------------------
 
 def test_nvidia_fan_not_supported():
-    # Laptop EC owns the fan; pynvml raises NotSupported. Code records
-    # fan_speed_pct=None and still keeps the GPU record (rule 2).
     with patch("pynvml.nvmlInit"), \
          patch("pynvml.nvmlShutdown"), \
          patch("pynvml.nvmlDeviceGetCount", return_value=1), \
@@ -200,7 +192,6 @@ def test_nvidia_fan_not_supported():
 
 
 def test_nvidia_all_metrics_not_supported():
-    # Pathological case: every metric unavailable, GPU still recorded.
     with patch("pynvml.nvmlInit"), \
          patch("pynvml.nvmlShutdown"), \
          patch("pynvml.nvmlDeviceGetCount", return_value=1), \
@@ -227,7 +218,7 @@ def test_nvidia_all_metrics_not_supported():
 
 
 # ----------------------------------------------------------------
-# NVIDIA "no hardware / no driver" -> empty list (rule 3)
+# NVIDIA "no hardware / no driver" -> empty list
 # ----------------------------------------------------------------
 
 def test_nvidia_no_gpus():
@@ -240,7 +231,9 @@ def test_nvidia_no_gpus():
 
 
 @pytest.mark.parametrize("exc", [
-    pynvml.NVMLError("boom"),
+    # Must be a numeric NVML code; a string value makes str(exc) raise
+    # TypeError via "%d format" when the sampler logs the failure.
+    pynvml.NVMLError(pynvml.NVML_ERROR_UNINITIALIZED),
     RuntimeError("boom"),
 ])
 def test_nvidia_returns_empty_when_nvml_init_failed(exc):
@@ -257,16 +250,16 @@ def test_get_nvidia_does_not_call_nvml_init():
          patch("pynvml.nvmlDeviceGetCount", return_value=0):
 
         sampler = LinuxThermalSampler()
-        assert mock_init.call_count == 1  # exactly once, in __init__
+        assert mock_init.call_count == 1
 
         sampler._get_nvidia()
         sampler._get_nvidia()
 
-        assert mock_init.call_count == 1  # _get_nvidia must not re-init
+        assert mock_init.call_count == 1
 
 
 # ----------------------------------------------------------------
-# Sensors (subprocess + lm-sensors) — returns dict | None
+# Sensors (subprocess + lm-sensors)
 # ----------------------------------------------------------------
 
 def test_sensors_thinkpad():
@@ -309,36 +302,25 @@ def test_sensors_asus():
 
 
 def test_errors_sensors():
-    """Every failure mode returns None (sensor_available=False downstream).
-
-    Was: distinct Errors.X sentinels. Now: no error taxonomy — the caller
-    only needs "did sensors produce usable data or not".
-    """
-    # sensors binary missing
+    """Every failure mode returns None (sensor_available=False downstream)."""
     with patch("subprocess.run", side_effect=FileNotFoundError):
         assert LinuxThermalSampler()._get_sensors() is None
 
-    # sensors not executable
     with patch("subprocess.run", side_effect=PermissionError):
         assert LinuxThermalSampler()._get_sensors() is None
 
-    # sensors exited non-zero
     with patch("subprocess.run",
                side_effect=subprocess.CalledProcessError(returncode=1, cmd="sensors")):
         assert LinuxThermalSampler()._get_sensors() is None
 
-    # sensors hung
     with patch("subprocess.run",
                side_effect=subprocess.TimeoutExpired(cmd="sensors", timeout=2)):
         assert LinuxThermalSampler()._get_sensors() is None
 
-    # malformed JSON — must mock the *output*, not subprocess.run's side_effect,
-    # because JSON parsing happens after subprocess.run returns
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = FakeCompletedProcess(stdout="{invalid json}")
         assert LinuxThermalSampler()._get_sensors() is None
 
-    # anything else
     with patch("subprocess.run", side_effect=TypeError):
         assert LinuxThermalSampler()._get_sensors() is None
 
@@ -376,7 +358,6 @@ def test_thermal_snapshot_full():
 
 
 def test_thermal_snapshot_no_gpu_no_sensors():
-    """No GPU, no sensors -> availability flags False, fields None."""
     with patch("pynvml.nvmlInit", side_effect=RuntimeError), \
          patch.object(LinuxThermalSampler, "_get_nvidia", return_value=[]), \
          patch.object(LinuxThermalSampler, "_get_sensors", return_value=None):
@@ -394,7 +375,6 @@ def test_thermal_snapshot_no_gpu_no_sensors():
 
 
 def test_thermal_snapshot_cache_hit():
-    """Two calls inside the 3s window must hit the cache."""
     with patch("pynvml.nvmlInit"), \
          patch("pynvml.nvmlShutdown"), \
          patch.object(LinuxThermalSampler, "_get_nvidia",
@@ -412,7 +392,6 @@ def test_thermal_snapshot_cache_hit():
 
 
 def test_thermal_snapshot_cache_expiry():
-    """A call past the 3s window must re-sample."""
     with patch("pynvml.nvmlInit"), \
          patch("pynvml.nvmlShutdown"), \
          patch.object(LinuxThermalSampler, "_get_nvidia",
@@ -423,7 +402,6 @@ def test_thermal_snapshot_cache_expiry():
         sampler = LinuxThermalSampler()
         snap1 = sampler.get_thermal_snapshot()
 
-        # Fast-forward the cache timestamp by >3s
         sampler._last_thermal_time -= 4.0
 
         snap2 = sampler.get_thermal_snapshot()
