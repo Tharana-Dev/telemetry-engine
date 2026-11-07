@@ -34,7 +34,12 @@ A high-performance, system telemetry engine written in Python. The Linux engine 
 
 ```text
 telemetry-engine/
-├── engine/
+├── cli/                   # Presentation Layer (UI)
+│   ├── __init__.py
+│   ├── data_collector.py  # Gathers snapshots, captures errors
+│   ├── dashboard.py       # Rich Table rendering and layout
+│   └── formatters.py      # Unit conversion helpers (Bytes, Bits, None-safe)
+├── engine/                # Hardware Abstraction Layer
 │   ├── __init__.py
 │   ├── base_sampler.py    # Abstract Base Class (HAL contract)
 │   ├── models.py          # Dataclasses for strict type enforcement
@@ -42,27 +47,22 @@ telemetry-engine/
 │   ├── linux_memory.py    # Memory structural parser
 │   ├── linux_battery.py   # ACPI/sysfs battery parsing
 │   ├── linux_thermal.py   # NVML & lm-sensors JSON parsing
-│   ├── linux_disk.py      # /proc/diskstats parsing & space telemetry
+│   ├── linux_disk.py      # /proc/diskstats parsing
 │   ├── linux_network.py   # /proc/net/dev parsing
-│   ├── linux_sampler.py   # Linux adapter bridging the HAL to raw parsers
-│   └── psutil_sampler.py  # Universal cross-platform fallback (Stub)
+│   ├── linux_sampler.py   # Linux adapter and unified error boundary
+│   ├── psutil_sampler.py  # Universal cross-platform fallback driver
+│   └── logger.py          # Rotating file logger with throttling
 ├── tests/
 │   ├── fixtures/
-│   ├── test_cpu.py        
-│   ├── test_memory.py
-│   ├── test_battery.py
-│   ├── test_linux_thermals.py
-│   ├── test_linux_disk.py
-│   ├── test_linux_network.py
-│   ├── test_main.py
-│   └── test_psutil.py
+│   └── test_*.py          # 210+ tests covering all edge cases
 ├── benchmark.py           # Automated performance profiler
-├── main.py                # Main executable orchestrator
+├── main.py                # Entry point / Orchestrator
 ├── README.md              
 └── requirements.txt       
 ```
 
 ---
+
 
 ## 🚀 Getting Started
 
@@ -102,30 +102,32 @@ python3 main.py
 
 ### Expected Output Terminal UI
 
+The dashboard utilizes `rich` to render a live, 4Hz updating, two-column interface with color-coded gauges. It uses the terminal's alternate screen buffer (like `htop`), ensuring your scrollback history remains clean.
+
 ```text
-╔══════════════════════════════════════════════════════════════════╤══════════════════════════════════════════════════════════════════╗
-║ SYSTEM & HARDWARE                                                │ I/O & NETWORK                                                    ║
-║ ─────────────────────────────                                    │ ─────────────────────────────                                    ║
-║ Engine Mode:  Linux Native (/proc)                               │                                                                  ║
-║                                                                  │ DISK SPACE                                                       ║
-║ CPU & MEMORY                                                     │   Total:      1006.85 GB                                         ║
-║   CPU Usage:  4.03%                                              │   Used:       5.20 GB  (0.5%)                                    ║
-║   Memory:     35.37% (2.62 GB / 7.42 GB)                         │   Free:       950.43 GB                                          ║
-║                                                                  │                                                                  ║
-║ BATTERY                                                          │ DISK I/O                                                         ║
-║   Status:     Discharging                                        │   sdd:                                                           ║
-║   Capacity:   80%  (Health: 100.0%)                              │     Read:  492.53 MB/s                                           ║
-║   Power:      1.20 W                                             │     Write: 108.46 MB/s                                           ║
-║   Time Est:   3h 20m remaining                                   │                                                                  ║
-║                                                                  │ NETWORK                                                          ║
-║ THERMAL & GPU                                                    │   eth0 (CONNECTED)                                               ║
-║   CPU Temp:   N/A (Max: N/A)                                     │     ↓ 1.95 Mbps | ↑ 2.76 Mbps                                    ║
-║   GPU [0]:    NVIDIA GeForce RTX 4050 Laptop GPU                 │     Total Rx Err/Drop: 0 / 0                                     ║
-║     49°C | 0% | 14.26W                                           │     Total Tx Err/Drop: 0 / 0                                     ║
-║                                                                  │     Total Data:  929.42 MB                                       ║
-╚══════════════════════════════════════════════════════════════════╧══════════════════════════════════════════════════════════════════╝
+                     SYSTEM TELEMETRY ENGINE                     
+                                                                  
+ SYSTEM & HARDWARE               I/O & NETWORK                   
+ ─────────────────────────────   ─────────────────────────────   
+ Engine Mode:  Linux Native (/proc)                               
+                                 DISK SPACE                      
+ CPU & MEMORY                    Total:      1006.85 GB          
+ CPU Usage:   ███░░░░░░░░░░░░░░ 2.1%     Used:       ░░░░ 0.5% (5.18 GB) 
+ Memory:      ████████░░░░░░░░░ 44.8%    Free:       950.46 GB       
+                                 
+ BATTERY                         DISK I/O                        
+ Status:      Not charging       sdd:                            
+ Capacity:    ████████████████░ 80%       Read:  0.0 B/s           
+ Power:       0.00 W                      Write: 0.0 B/s           
+ Time Est:    Wall Power (AC)                                    
+                                 NETWORK                         
+ THERMAL & GPU                   eth0 (CONNECTED)                
+ CPU Temp:    N/A                         ↓ / ↑:   0.00 Kbps | 0.00 Kbps
+ GPU:         Not Detected                Total Data:  16.29 MB    
 
  Press Ctrl+C to exit.
+```
+*(Note: The actual dashboard features dynamic color thresholds: green for safe usage, yellow for moderate, and red for critical. Progress bars pulse when data is `N/A`).*
 ```
 
 ---

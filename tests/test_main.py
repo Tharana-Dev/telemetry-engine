@@ -1,5 +1,5 @@
 """
-Tests for main.py — the CLI dashboard.
+Tests for the CLI dashboard.
 
 Strategy:
 - Pure helpers (format_*, print_side_by_side) get unit-level coverage.
@@ -8,6 +8,12 @@ Strategy:
   snapshot dicts — it must never touch a collector.
 - main() runs exactly one iteration via time.sleep -> KeyboardInterrupt,
   then capsys is asserted for the rendered view.
+
+Module layout under test:
+    main                -> main(), print_side_by_side()
+    cli.dashboard       -> gather_snapshots(), build_dashboard()
+    cli.formatters      -> format_speed_bits, format_total_data,
+                           format_disk_speed, format_disk_size
 """
 
 import os
@@ -15,15 +21,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from main import (
-    build_dashboard,
+# Entry point (owns main(), print_side_by_side, and the collector imports).
+from main import main, print_side_by_side
+
+# Extracted modules.
+from cli.dashboard import build_dashboard, gather_snapshots
+from cli.formatters import (
     format_disk_size,
     format_disk_speed,
     format_speed_bits,
     format_total_data,
-    gather_snapshots,
-    main,
-    print_side_by_side,
 )
 
 # ===========================================================================
@@ -826,7 +833,8 @@ def test_main_calls_cls_on_windows():
 
     assert mock_os_sys.call_count == 2
     assert mock_os_sys.call_args[0][0] == "cls"
-    
+
+
 def test_main_battery_init_error_shows_unavailable_error(capsys):
     """health["battery"] not None -> 'Unavailable (Error)'."""
     collector = _make_fake_collector()
