@@ -1,4 +1,3 @@
-
 from rich.console import Console
 from rich.live import Live
 from rich.text import Text
@@ -9,8 +8,6 @@ import platform
 import threading
 from collections import deque
 
-from engine.linux_sampler import LinuxCollector
-from engine.psutil_sampler import PsutilCollector
 from cli.dashboard import build_dashboard
 from cli.data_collector import TelemetryWorker, gather_snapshots
 
@@ -31,12 +28,14 @@ def main():
     # ---- 2. Initialize the Correct Collector ----------------------
     if sys_type == "Linux":
         try:
+            from engine.linux_sampler import LinuxCollector
             data = LinuxCollector()
         except Exception as e:
             data = PsutilCollector()
             fallback_active = True
             fallback_reason = type(e).__name__
     else:
+        from engine.psutil_sampler import PsutilCollector
         data = PsutilCollector()
         
     if hasattr(data, "get_system_health"):
