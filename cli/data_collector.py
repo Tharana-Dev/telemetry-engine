@@ -1,3 +1,7 @@
+import threading
+import time
+from collections import deque
+
 # =====================================================================
 # DATA LAYER — samples the system. Never renders. Never raises.
 # =====================================================================
@@ -37,3 +41,23 @@ def gather_snapshots(data) -> dict:
     except Exception as e: snapshots["network"] = (None, str(e))
 
     return snapshots
+
+class TelemetryWorker:
+    def __init__(self, 
+        collector,
+        buffer: deque, 
+        stop_event: threading.Event, 
+        interval: float = 1.0
+        ):
+        self.collector = collector
+        self.buffer = buffer
+        self.stop_event = stop_event
+        self.interval = interval
+    
+    def run(self):
+        while not self.stop_event.is_set():
+            snapshots = gather_snapshots(self.collector)
+            self.buffer.append(snapshots)
+            self.stop_event.wait(timeout=self.interval)
+#Why? Because if you press Ctrl+C, time.sleep will wait the full 1 second before shutting down. stop_event.wait wakes up instantly when the stop event is set, making shutdown lightning fast
+    
