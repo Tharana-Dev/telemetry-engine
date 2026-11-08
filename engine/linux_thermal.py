@@ -132,6 +132,7 @@ class LinuxThermalSampler:
                 text=True,
                 check=True,
                 timeout=2,
+                creationflags=subprocess.CREATE_NO_WINDOW 
             )
         except (FileNotFoundError, PermissionError,
                 subprocess.CalledProcessError,

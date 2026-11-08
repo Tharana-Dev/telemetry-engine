@@ -1,5 +1,4 @@
 import ctypes
-import platform
 from engine.logger import logger
 from engine.models import ThermalSnapshot, GpuInfo
 import pynvml

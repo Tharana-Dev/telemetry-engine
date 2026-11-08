@@ -6,53 +6,29 @@ from engine.base_sampler import BaseSystemCollector
 from engine.universal_impl.universal_disk import UniversalDiskSampler
 from engine.universal_impl.universal_network import UniversalNetworkSampler
 from engine.universal_impl.universal_thermal import UniversalThermalSampler
+from engine.universal_impl.universal_memory import UniversalMemorySampler
+from engine.universal_impl.universal_battery import UniversalBatterySampler
+from engine.universal_impl.universal_cpu import UniversalCpuSampler
 import psutil
 
 
 class PsutilCollector(BaseSystemCollector):
     def __init__(self) -> None:
-        # Prime the CPU baseline so the first real read isn't 0.0
-        psutil.cpu_percent()
+        self.cpu_sampler = UniversalCpuSampler()
         self.disk_sampler = UniversalDiskSampler()
         self.network_sampler = UniversalNetworkSampler()
         self.thermal_sampler =  UniversalThermalSampler()
-    
-    def get_cpu_snapshot(self) -> CpuSnapshot:
-        return CpuSnapshot(usage_pct=psutil.cpu_percent())
-    
+        self.mem_sampler = UniversalMemorySampler()
+        self.batt_sampler = UniversalBatterySampler()
+         
+    def get_cpu_snapshot(self):
+        return self.cpu_sampler.get_snapshot()
+        
     def get_memory_snapshot(self) -> MemorySnapshot:
-        mem = psutil.virtual_memory()
-        return MemorySnapshot(
-            total_gb=round(mem.total / (1024**3), 2),
-            used_gb=round(mem.used / (1024**3), 2),
-            available_gb=round(mem.available / (1024**3), 2),
-            used_pct=round(mem.percent, 2)
-        )
-    
+        return self.mem_sampler.get_snapshot()
+
     def get_battery_snapshot(self) -> BatterySnapshot | None:
-        battery = psutil.sensors_battery()
-        if battery is None:
-            return None
-        
-        if battery.power_plugged is True or battery.power_plugged is None:
-            online = True
-            status = "Full" if battery.percent == 100 else "Charging"
-        else:
-            online = False
-            status = "Discharging"
-        
-        hours_left = None
-        if battery.secsleft not in (-1, -2) and battery.secsleft >= 0:
-            hours_left = round(battery.secsleft / 3600, 2)
-        
-        return BatterySnapshot(
-            online=online,
-            status=status,
-            capacity=int(battery.percent),
-            power_watts=None,       # Not available on Windows psutil
-            hours_left=hours_left,
-            health_percent=None     # Not available on Windows psutil
-        )    
+        return self.batt_sampler.get_snapshot()
 
     def get_thermal_snapshot(self) -> ThermalSnapshot:
         return self.thermal_sampler.get_thermal_snapshot()

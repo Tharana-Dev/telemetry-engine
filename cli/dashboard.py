@@ -5,7 +5,6 @@ from rich.progress_bar import ProgressBar
 from rich.style import Style
 from rich.table import Table
 from rich.text import Text
-import sys
 
 # Assuming these are in your formatters module now
 from cli.formatters import (
