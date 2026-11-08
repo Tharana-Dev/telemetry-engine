@@ -66,7 +66,6 @@ class LinuxThermalSampler:
             logger.error(f"NVML driver lost. Attempting to reset: {e}")
             self.initialized = False  # <--- CRITICAL FIX: Force re-init next tick
             return []
-        # ... rest of the code
         if count == 0:
             return []
 
