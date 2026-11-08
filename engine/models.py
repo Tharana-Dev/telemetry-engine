@@ -41,8 +41,11 @@ class ThermalSnapshot:
     system_fans: dict[str, int] | None = None
     gpu_available: bool = True
     sensor_available: bool = True
-    cpu_vendor: str | None = "Unknown"
-    board_vendor: str | None = "Unknown"
+    cpu_vendor: str | None = "Unknown"       # e.g., "AMD" or "Intel"
+    cpu_name: str | None = None              # e.g., "AMD Ryzen 7 170 with Radeon Graphics"
+    cpu_speed_mhz: int | None = None         # e.g., 3194
+    board_vendor: str | None = "Unknown"     # e.g., "ASUSTeK COMPUTER INC. FA607NUQ"
+    igpu_name: str | None = None             # e.g., "AMD Radeon(TM) Graphics"
     gpu_error: str | None = None
     sensor_error: str | None = None
     gpu_usage: int | None = None

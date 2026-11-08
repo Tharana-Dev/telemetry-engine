@@ -5,6 +5,7 @@ from engine.models import (
 from engine.base_sampler import BaseSystemCollector
 from engine.universal_impl.universal_disk import UniversalDiskSampler
 from engine.universal_impl.universal_network import UniversalNetworkSampler
+from engine.universal_impl.universal_thermal import UniversalThermalSampler
 import psutil
 
 
@@ -14,6 +15,7 @@ class PsutilCollector(BaseSystemCollector):
         psutil.cpu_percent()
         self.disk_sampler = UniversalDiskSampler()
         self.network_sampler = UniversalNetworkSampler()
+        self.thermal_sampler =  UniversalThermalSampler()
     
     def get_cpu_snapshot(self) -> CpuSnapshot:
         return CpuSnapshot(usage_pct=psutil.cpu_percent())
@@ -53,12 +55,7 @@ class PsutilCollector(BaseSystemCollector):
         )    
 
     def get_thermal_snapshot(self) -> ThermalSnapshot:
-        return ThermalSnapshot(
-            gpu_available=False, 
-            sensor_available=False,
-            sensor_error="Thermal sensors not supported on this platform."
-        )
-
+        return self.thermal_sampler.get_thermal_snapshot()
     def get_disk_io_snapshot(self) -> list[DiskIOSnapshot]:
         return self.disk_sampler.get_io_snapshot()
 

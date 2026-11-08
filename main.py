@@ -10,10 +10,12 @@ from collections import deque
 
 from cli.dashboard import build_dashboard
 from cli.data_collector import TelemetryWorker, gather_snapshots
+from engine.universal_impl.universal_thermal import is_admin
 
 
 def main():
     console = Console()
+    admin_mode = is_admin()
     
     # ---- 1. Initialize Threading and Buffers -----------------------
     buffer = deque(maxlen=10)
@@ -61,7 +63,8 @@ def main():
             fallback_active, 
             fallback_reason, 
             degraded_subsystems, 
-            health
+            health,
+            admin_mode
         )
         footer = Text("\n Press Ctrl+C to exit.", style="bright_black")
         return Group(table, footer)

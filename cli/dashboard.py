@@ -5,6 +5,7 @@ from rich.progress_bar import ProgressBar
 from rich.style import Style
 from rich.table import Table
 from rich.text import Text
+import sys
 
 # Assuming these are in your formatters module now
 from cli.formatters import (
@@ -25,6 +26,7 @@ def build_dashboard(
     fallback_reason,
     degraded_subsystems: list[str],
     health: dict,
+    admin_mode: bool
 ) -> Group:
     """Render the two-column dashboard as a rich Group."""
 
@@ -115,6 +117,9 @@ def build_dashboard(
     else:
         left_items.append(Text("Engine Mode:  Linux Native (/proc)"))
     left_items.append(Text(""))
+    if sys_type == "Windows":
+        admin_str = "Yes" if admin_mode else "No (CPU Temps Blocked)"
+        left_items.append(Text(f"Admin Mode:  {admin_str}", style="green" if admin_mode else "yellow"))
 
     # --- CPU & Memory ------------------------------------------------
     cpu_mem = three_col_grid()
@@ -198,23 +203,39 @@ def build_dashboard(
     elif thermal is None:
         th.add_row(Text("Status:"), Text("Unavailable", style=DIM_STYLE))
     else:
-        if thermal.sensor_available:
-            if thermal.cpu_temp is None and thermal.cpu_temp_max is None:
-                th.add_row(Text("CPU Temp:"), Text("N/A", style=DIM_STYLE))
-            else:
-                th.add_row(
-                    Text("CPU Temp:"),
-                    Text(f"{_fmt(thermal.cpu_temp, '°C')} (Max: {_fmt(thermal.cpu_temp_max, '°C')})"),
-                )
+        # --- Hardware Info ---
+        cpu_name = _fmt(thermal.cpu_name)
+        speed = f" ({thermal.cpu_speed_mhz} MHz)" if getattr(thermal, "cpu_speed_mhz", None) else ""
+        th.add_row(Text("CPU:"), Text(f"{cpu_name}{speed}"))
+        
+        th.add_row(Text("Motherboard:"), Text(_fmt(thermal.board_vendor)))
+        
+        if getattr(thermal, "igpu_name", None):
+            th.add_row(Text("iGPU:"), Text(thermal.igpu_name))
             
-            if thermal.system_fans:
+        th.add_row(Text(""), Text(""))  # Blank line for visual separation
+        
+        # --- Temps ---
+        if getattr(thermal, "sensor_available", False):
+            if getattr(thermal, "cpu_temp", None) is not None:
+                cpu_t = _fmt(thermal.cpu_temp, "°C")
+                cpu_m = _fmt(getattr(thermal, "cpu_temp_max", None), "°C")
+                th.add_row(Text("CPU Temp:"), Text(f"{cpu_t} (Max: {cpu_m})"))
+            elif getattr(thermal, "sensor_error", None):
+                # Use style="yellow" instead of [yellow] tags
+                th.add_row(Text("CPU Temp:"), Text(thermal.sensor_error, style="yellow"))
+            else:
+                th.add_row(Text("CPU Temp:"), Text("N/A", style=DIM_STYLE))
+            
+            if getattr(thermal, "system_fans", None):
                 for fan, rpm in thermal.system_fans.items():
                     th.add_row(Text(f"{fan.capitalize()}:"), Text(f"{rpm} RPM"))
         else:
             th.add_row(Text("Sensor:"), Text("Unavailable", style=DIM_STYLE))
 
-        if thermal.gpu_available:
-            if thermal.gpus:
+        # --- GPU ---
+        if getattr(thermal, "gpu_available", False):
+            if getattr(thermal, "gpus", None):
                 for gpu in thermal.gpus:
                     th.add_row(Text(f"GPU [{_fmt(gpu.index)}]:"), Text(_fmt(gpu.name)))
                     th.add_row(
@@ -232,6 +253,7 @@ def build_dashboard(
 
     left_items.append(section("THERMAL & GPU"))
     left_items.append(th)
+    left_items.append(Text(""))
 
     left_column = Group(*left_items)
 
