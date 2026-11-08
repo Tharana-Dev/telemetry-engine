@@ -3,6 +3,7 @@ from engine.models import (
     NetworkSnapshot, ThermalSnapshot, DiskSpaceSnapshot
 )
 from engine.base_sampler import BaseSystemCollector
+from engine.universal_impl.universal_disk import UniversalDiskSampler
 import psutil
 
 
@@ -10,6 +11,7 @@ class PsutilCollector(BaseSystemCollector):
     def __init__(self) -> None:
         # Prime the CPU baseline so the first real read isn't 0.0
         psutil.cpu_percent()
+        self.disk_sampler = UniversalDiskSampler()
     
     def get_cpu_snapshot(self) -> CpuSnapshot:
         return CpuSnapshot(usage_pct=psutil.cpu_percent())
@@ -56,13 +58,10 @@ class PsutilCollector(BaseSystemCollector):
         )
 
     def get_disk_io_snapshot(self) -> list[DiskIOSnapshot]:
-        return []  # Empty list = "Initializing" (until we build the real implementation)
+        return self.disk_sampler.get_io_snapshot()
 
     def get_disk_space_snapshot(self) -> DiskSpaceSnapshot:
-        # We return a valid dataclass so the UI doesn't crash
-        return DiskSpaceSnapshot(
-            total_bytes=None, used_bytes=None, free_bytes=None, percent=None
-        )
+        return self.disk_sampler.get_space_snapshot()
     
     def get_network_snapshot(self) -> list[NetworkSnapshot]:
         return []  # Empty list = "Initializing"

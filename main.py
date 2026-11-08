@@ -35,7 +35,7 @@ def main():
             fallback_active = True
             fallback_reason = type(e).__name__
     else:
-        from engine.psutil_sampler import PsutilCollector
+        from engine.universal_sampler import PsutilCollector
         data = PsutilCollector()
         
     if hasattr(data, "get_system_health"):

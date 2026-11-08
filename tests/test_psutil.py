@@ -3,7 +3,7 @@
 from collections import namedtuple
 from unittest.mock import patch
 
-from engine.psutil_sampler import PsutilCollector
+from engine.universal_sampler import PsutilCollector
 
 
 # Mirror the shape psutil.sensors_battery() returns.
