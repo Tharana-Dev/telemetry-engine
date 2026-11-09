@@ -2,6 +2,13 @@
 psutil==5.9.8
 nvidia-ml-py==12.535.133
 
+# CLI Dependencies
+rich==13.7.1
+
+# Windows-Specific Dependencies
+wmi==1.5.1
+WinTmp==1.0.0
+
 # Testing Dependencies
 pytest==9.1.1
 pluggy==1.7.0
