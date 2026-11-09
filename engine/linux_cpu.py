@@ -1,3 +1,4 @@
+import psutil
 from engine.models import CpuSnapshot
 
 
@@ -49,11 +50,15 @@ class LinuxCpuSampler:
             self._last_total, self._last_idle = raw
 
     def get_snapshot(self) -> CpuSnapshot:
+        # NEW: Get live frequency from psutil
+        freq = psutil.cpu_freq()
+        current_freq_mhz = int(freq.current) if freq else None
+
         raw = self._get_raw_times()
 
         # Partial read failure -> usage unknown, not 0.0.
         if raw is None:
-            return CpuSnapshot(usage_pct=None)
+            return CpuSnapshot(usage_pct=None, current_freq_mhz=current_freq_mhz)
 
         current_total, current_idle = raw
 
@@ -62,7 +67,7 @@ class LinuxCpuSampler:
         if self._last_total is None or self._last_idle is None:
             self._last_total = current_total
             self._last_idle = current_idle
-            return CpuSnapshot(usage_pct=None)
+            return CpuSnapshot(usage_pct=None, current_freq_mhz=current_freq_mhz)
 
         delta_total = current_total - self._last_total
         delta_idle = current_idle - self._last_idle
@@ -72,7 +77,7 @@ class LinuxCpuSampler:
 
         # Clock went backwards or the file was swapped — don't divide by <= 0.
         if delta_total <= 0:
-            return CpuSnapshot(usage_pct=None)
+            return CpuSnapshot(usage_pct=None, current_freq_mhz=current_freq_mhz)
 
         usage_pct = (1.0 - (delta_idle / delta_total)) * 100
 
@@ -81,4 +86,4 @@ class LinuxCpuSampler:
         # above 100 (or below 0 if delta_idle exceeds delta_total). Clamp
         # to the physically meaningful range before rounding.
         usage_pct = max(0.0, min(100.0, usage_pct))
-        return CpuSnapshot(usage_pct=round(usage_pct, 2))
+        return CpuSnapshot(usage_pct=round(usage_pct, 2), current_freq_mhz=current_freq_mhz)

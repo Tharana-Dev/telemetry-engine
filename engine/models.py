@@ -10,18 +10,19 @@ class MemorySnapshot:
 @dataclass(frozen=True)
 class CpuSnapshot:
     usage_pct: float | None
+    current_freq_mhz: int | None = None  # <--- NEW: Live dynamic speed
     
 @dataclass(frozen=True)
 class BatterySnapshot:
     # 1. Main Status & Core Metrics
     online: bool | None                       # From AC1/online (True if wall power is connected)
     status: str | None                        # From BAT1/status ('Charging', 'Discharging', 'Full', 'N/A')
-    capacity: int | None               # From BAT1/capacity (0-100% fuel gauge); None if missing
+    capacity: int | None                      # From BAT1/capacity (0-100% fuel gauge); None if missing
 
     # 2. Live Power Dynamics
-    power_watts: float | None          # Calculated from BAT1/power_now (divided by 1,000,000)
-    hours_left: float | None           # Calculated from BAT1/energy_now / BAT1/power_now
-    health_percent: float | None       # Calculated from (energy_full / energy_full_design) * 100
+    power_watts: float | None                 # Calculated from BAT1/power_now (divided by 1,000,000)
+    hours_left: float | None                  # Calculated from BAT1/energy_now / BAT1/power_now
+    health_percent: float | None              # Calculated from (energy_full / energy_full_design) * 100
 
 @dataclass(frozen=True)
 class GpuInfo:
@@ -43,7 +44,7 @@ class ThermalSnapshot:
     sensor_available: bool = True
     cpu_vendor: str | None = "Unknown"       # e.g., "AMD" or "Intel"
     cpu_name: str | None = None              # e.g., "AMD Ryzen 7 170 with Radeon Graphics"
-    cpu_speed_mhz: int | None = None         # e.g., 3194
+    cpu_base_speed_mhz: int | None = None    # <--- RENAMED from cpu_speed_mhz
     board_vendor: str | None = "Unknown"     # e.g., "ASUSTeK COMPUTER INC. FA607NUQ"
     igpu_name: str | None = None             # e.g., "AMD Radeon(TM) Graphics"
     gpu_error: str | None = None
@@ -61,13 +62,11 @@ class ThermalSnapshot:
             object.__setattr__(self, "gpu_usage", first_gpu.utilization_pct)
             object.__setattr__(self, "gpu_power_watts", first_gpu.power_w)
 
-
 @dataclass(frozen=True)
 class DiskIOSnapshot:
     device: str | None
     read_bps: float | None          # raw bytes/sec
     write_bps: float | None         # raw bytes/sec
-
 
 @dataclass(frozen=True)
 class DiskSpaceSnapshot:

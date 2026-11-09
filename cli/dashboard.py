@@ -133,6 +133,13 @@ def build_dashboard(
             bar(cpu.usage_pct),
             Text(_fmt(cpu.usage_pct, "%"), style=value_style(cpu.usage_pct)),
         )
+        # --- NEW: Live Dynamic CPU Speed ---
+        if getattr(cpu, "current_freq_mhz", None):
+            cpu_mem.add_row(
+                Text("CPU Speed:"),
+                Text(""), # No bar
+                Text(f"{cpu.current_freq_mhz / 1000:.2f} GHz")
+            )
 
     if health.get("memory") is not None or memory_error is not None:
         cpu_mem.add_row(Text("Memory:"), bar(None), Text("Unavailable (Error)", style=ERROR_STYLE))
@@ -198,16 +205,23 @@ def build_dashboard(
     th = two_col_grid()
 
     if health.get("thermal") is not None or thermal_error is not None:
-        th.add_row(Text("Status:"), Text("Unavailable (Error)", style=ERROR_STYLE))
+        # Extract the actual error string
+        err_msg = health.get("thermal") or thermal_error or "Unknown Error"
+        th.add_row(Text("Status:"), Text(f"Unavailable ({err_msg})", style=ERROR_STYLE))
     elif thermal is None:
         th.add_row(Text("Status:"), Text("Unavailable", style=DIM_STYLE))
     else:
         # --- Hardware Info ---
-        cpu_name = _fmt(thermal.cpu_name)
-        speed = f" ({thermal.cpu_speed_mhz} MHz)" if getattr(thermal, "cpu_speed_mhz", None) else ""
-        th.add_row(Text("CPU:"), Text(f"{cpu_name}{speed}"))
+        cpu_name = _fmt(getattr(thermal, "cpu_name", None))
         
-        th.add_row(Text("Motherboard:"), Text(_fmt(thermal.board_vendor)))
+        # --- NEW: Static Base Speed ---
+        base_speed = ""
+        if getattr(thermal, "cpu_base_speed_mhz", None):
+            base_speed = f" ({thermal.cpu_base_speed_mhz / 1000:.1f} GHz Base)"
+            
+        th.add_row(Text("CPU:"), Text(f"{cpu_name}{base_speed}"))
+        
+        th.add_row(Text("Motherboard:"), Text(_fmt(getattr(thermal, "board_vendor", None))))
         
         if getattr(thermal, "igpu_name", None):
             th.add_row(Text("iGPU:"), Text(thermal.igpu_name))

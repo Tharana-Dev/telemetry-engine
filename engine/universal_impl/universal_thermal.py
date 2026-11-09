@@ -164,7 +164,7 @@ class UniversalThermalSampler:
             sensor_error=sensor_error,
             cpu_vendor=self._cpu_vendor,
             cpu_name=self._cpu_name,
-            cpu_speed_mhz=self._cpu_speed_mhz,
+            cpu_base_speed_mhz=self._cpu_speed_mhz,
             board_vendor=self._board_vendor,
             igpu_name=self._igpu_name
         )

@@ -3,6 +3,7 @@ import subprocess
 import json
 import pynvml
 import time
+import os
 from engine.logger import logger
 
 
@@ -33,14 +34,16 @@ class LinuxThermalSampler:
         self.initialized = False
         self._last_thermal_time = 0.0
         self._cached_snapshot: ThermalSnapshot | None = None
+        
+        # --- NEW: Cache static hardware info on startup ---
+        self._cpu_name, self._cpu_speed_mhz = self._get_cpu_info()
+        self._board_vendor = self._get_board_info()
+        self._igpu_name = self._get_igpu_name()
+        
         try:
             pynvml.nvmlInit()
             self.initialized = True
         except Exception:
-            # No usable NVIDIA driver (library missing, driver not loaded,
-            # post-reset, patched runtime, …). Rule 3: no GPU hardware →
-            # gpu_available=False in the snapshot. The thermal sampler has
-            # no single primary source, so this is not fatal.
             self.initialized = False
 
     def __del__(self):
@@ -49,6 +52,83 @@ class LinuxThermalSampler:
                 pynvml.nvmlShutdown()
             except Exception:
                 pass
+
+    # =================================================================
+    # NEW HELPER METHODS (Run once at startup)
+    # =================================================================
+
+    def _get_cpu_info(self) -> tuple[str | None, int | None]:
+        name = None
+        speed_mhz = None
+        
+        # 1. Try to get the base speed from sysfs (stable, doesn't fluctuate)
+        try:
+            with open("/sys/devices/system/cpu/cpu0/cpufreq/base_frequency", "r") as f:
+                speed_mhz = int(int(f.read().strip()) / 1000)
+        except (FileNotFoundError, ValueError, PermissionError):
+            pass
+            
+        # 2. Read /proc/cpuinfo for the model name and fallback speed
+        try:
+            with open("/proc/cpuinfo", "r") as f:
+                for line in f:
+                    if line.startswith("model name") and not name:
+                        name = line.split(":", 1)[1].strip()
+                    elif line.startswith("cpu MHz") and speed_mhz is None:
+                        try:
+                            speed_mhz = int(float(line.split(":", 1)[1].strip()))
+                        except ValueError:
+                            pass
+                    if name and speed_mhz:
+                        break
+        except (FileNotFoundError, PermissionError):
+            pass
+            
+        return name, speed_mhz
+
+    def _get_board_info(self) -> str | None:
+        vendor = None
+        name = None
+        
+        try:
+            with open("/sys/class/dmi/id/board_vendor", "r") as f:
+                vendor = f.read().strip()
+        except (FileNotFoundError, PermissionError):
+            pass
+            
+        try:
+            with open("/sys/class/dmi/id/board_name", "r") as f:
+                name = f.read().strip()
+        except (FileNotFoundError, PermissionError):
+            pass
+            
+        if vendor and name:
+            return f"{vendor} {name}"
+        return vendor or name
+
+    def _get_igpu_name(self) -> str | None:
+        try:
+            kwargs = {}
+            if os.name == 'nt':
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+            res = subprocess.run(["lspci"], capture_output=True, text=True, check=True, timeout=2, **kwargs)
+            for line in res.stdout.splitlines():
+                # Look for VGA or Display controllers
+                if "VGA compatible controller" in line or "Display controller" in line:
+                    # Filter for known GPU keywords
+                    if any(kw in line for kw in ["Intel", "AMD", "Radeon", "Adreno"]):
+                        # Format: "00:02.0 VGA compatible controller: Intel Corporation ..."
+                        parts = line.split(":", 2)
+                        if len(parts) >= 3:
+                            return parts[2].strip()
+        except Exception:
+            pass
+        return None
+
+    # =================================================================
+    # EXISTING METHODS
+    # =================================================================
 
     def _get_nvidia(self) -> list[GpuInfo]:
         if not self.initialized:
@@ -62,17 +142,15 @@ class LinuxThermalSampler:
         try:
             count = pynvml.nvmlDeviceGetCount()
         except pynvml.NVMLError as e:
-            # The driver crashed or powered off mid-session!
             logger.error(f"NVML driver lost. Attempting to reset: {e}")
-            self.initialized = False  # <--- CRITICAL FIX: Force re-init next tick
+            self.initialized = False
             return []
+            
         if count == 0:
             return []
 
         gpu_records: list[GpuInfo] = []
         for i in range(count):
-            # T1: per-GPU isolation. A single bad GPU must not drop the
-            # data already collected for earlier GPUs.
             try:
                 handle = pynvml.nvmlDeviceGetHandleByIndex(i)
 
@@ -81,9 +159,7 @@ class LinuxThermalSampler:
                     name = name.decode("utf-8")
 
                 try:
-                    temp = pynvml.nvmlDeviceGetTemperature(
-                        handle, pynvml.NVML_TEMPERATURE_GPU
-                    )
+                    temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
                 except pynvml.NVMLError:
                     temp = None
 
@@ -92,7 +168,6 @@ class LinuxThermalSampler:
                 except pynvml.NVMLError:
                     usage = None
 
-                # Power is returned in milliwatts.
                 try:
                     power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
                     power_watts = round(power_mw / 1000, 2)
@@ -102,8 +177,6 @@ class LinuxThermalSampler:
                 try:
                     fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
                 except pynvml.NVMLError:
-                    # EC owns the fan (common on laptops), or a transient
-                    # driver error — either way, "not available" is honest.
                     fan_speed = None
 
                 gpu_records.append(GpuInfo(
@@ -115,24 +188,24 @@ class LinuxThermalSampler:
                     fan_speed_pct=fan_speed,
                 ))
             except Exception:
-                # T1: skip this GPU; keep whatever we already collected.
                 continue
 
         return gpu_records
 
     def _get_sensors(self) -> dict | None:
-        # Best-effort probe of the `sensors` binary. Any subprocess failure
-        # means "no usable sensor data" → None → sensor_available=False.
-        # The thermal sampler has no primary source, so nothing here is
-        # fatal.
         try:
+            # FIX: CREATE_NO_WINDOW crashes on Linux. Only pass it if on Windows.
+            kwargs = {}
+            if os.name == 'nt':
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                
             res = subprocess.run(
                 ["sensors", "-j"],
                 capture_output=True,
                 text=True,
                 check=True,
                 timeout=2,
-                creationflags=subprocess.CREATE_NO_WINDOW 
+                **kwargs
             )
         except (FileNotFoundError, PermissionError,
                 subprocess.CalledProcessError,
@@ -178,8 +251,6 @@ class LinuxThermalSampler:
                     if isinstance(value, dict) and input_key in value:
                         fans[key] = value[input_key]
 
-        # Partial: sensors ran and returned parseable JSON, but individual
-        # fields may still be None.
         return {
             "cpu_temp": cpu_temp,
             "cpu_max": cpu_max,
@@ -200,7 +271,7 @@ class LinuxThermalSampler:
         cpu_max = None
         system_fans = None
         cpu_vendor = None
-        board_vendor = None
+        sensor_board_vendor = None
 
         if sensor_data is not None:
             cpu_temp = sensor_data["cpu_temp"]
@@ -217,7 +288,7 @@ class LinuxThermalSampler:
                 system_fans = converted or None
 
             cpu_vendor = sensor_data["cpu_vendor"]
-            board_vendor = sensor_data["board_vendor"]
+            sensor_board_vendor = sensor_data["board_vendor"]
 
         snapshot = ThermalSnapshot(
             cpu_temp=cpu_temp,
@@ -227,7 +298,13 @@ class LinuxThermalSampler:
             gpu_available=bool(gpus),
             sensor_available=sensor_data is not None,
             cpu_vendor=cpu_vendor,
-            board_vendor=board_vendor,
+            # Use DMI board_vendor first, fallback to sensors mapping
+            board_vendor=self._board_vendor or sensor_board_vendor,
+            
+            # --- NEW: Pass the cached data ---
+            cpu_name=self._cpu_name,
+            cpu_speed_mhz=self._cpu_speed_mhz,
+            igpu_name=self._igpu_name,
         )
 
         self._cached_snapshot = snapshot
