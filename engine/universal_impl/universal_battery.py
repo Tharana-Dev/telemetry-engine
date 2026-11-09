@@ -12,16 +12,15 @@ class UniversalBatterySampler:
         self._health_percent = None
         if HAS_WMI:
             try:
-                # Target the root\wmi namespace instead of the default root\cimv2
+                # RESTORED: Target root\wmi for true battery health
                 c = wmi.WMI(namespace="root\\wmi")
                 
                 static_data = c.BatteryStaticData()
                 full_charge_data = c.BatteryFullChargedCapacity()
                 
                 if static_data and full_charge_data:
-                    # Match the first available battery instance
-                    design = static_data[0].DesignedCapacity
-                    full = full_charge_data[0].FullChargedCapacity
+                    design = getattr(static_data[0], 'DesignedCapacity', 0)
+                    full = getattr(full_charge_data[0], 'FullChargedCapacity', 0)
                     
                     if design and full and int(design) > 0:
                         self._health_percent = min(round((int(full) / int(design)) * 100, 1), 100.0)
@@ -41,14 +40,15 @@ class UniversalBatterySampler:
             status = "Discharging"
             
         hours_left = None
-        if battery.secsleft not in (-1, -2) and battery.secsleft >= 0:
+        # FIX: Added `battery.secsleft is not None` to prevent TypeError crashes
+        if battery.secsleft is not None and battery.secsleft not in (-1, -2) and battery.secsleft >= 0:
             hours_left = round(battery.secsleft / 3600, 2)
             
         return BatterySnapshot(
             online=online,
             status=status,
             capacity=int(battery.percent),
-            power_watts=None,       # Not natively available on Windows
+            power_watts=None,
             hours_left=hours_left,
-            health_percent=self._health_percent # <-- The corrected WMI Cached Health
+            health_percent=self._health_percent
         )

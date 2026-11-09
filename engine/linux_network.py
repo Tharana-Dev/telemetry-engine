@@ -1,136 +1,67 @@
-from engine.models import NetworkSnapshot
-import re
 import time
+import psutil
 
-# Physical interfaces only.
-VALID_PREFIX = re.compile(r'^(eth|wlan|enp|eno|wlp|enx|ens|wlx|wwan|wwp|em|p[0-9])')
+from engine.models import NetworkSnapshot
 
-
-class LinuxNetworkSampler:
-    def __init__(self, netdev_path: str = '/proc/net/dev'):
-        self.netdev_path = netdev_path
-        self._last_stats: dict[str, dict[str, int]] | None = None
+class UniversalNetworkSampler:
+    def __init__(self) -> None:
+        self._last_net_stats = None
         self._last_time: float | None = None
 
-    def _get_raw_stats(self) -> dict[str, dict[str, int]]:
-        # Fatal: if /proc/net/dev is missing or unreadable, open() raises
-        # FileNotFoundError / PermissionError and we let it bubble to
-        # LinuxCollector.
-        interfaces: dict[str, dict[str, int]] = {}
-        with open(self.netdev_path, 'r') as f:
-            lines = f.readlines()
-
-        for line in lines[2:]:  # Skip headers
-            if not line.strip():
-                continue
-            if ":" not in line:
-                continue
-
-            interface, data = line.split(":", 1)
-            interface = interface.strip()
-
-            if not VALID_PREFIX.match(interface):
-                continue
-
-            # Partial: malformed metrics for this interface -> skip it, keep
-            # parsing the rest.
-            try:
-                metrics = data.split()
-                interfaces[interface] = {
-                    "rx_bytes": int(metrics[0]),
-                    "rx_errs":  int(metrics[2]),
-                    "rx_drop":  int(metrics[3]),
-                    "tx_bytes": int(metrics[8]),
-                    "tx_errs":  int(metrics[10]),
-                    "tx_drop":  int(metrics[11]),
-                }
-            except (IndexError, ValueError):
-                continue
-
-        # No physical interfaces -> empty dict. get_network_snapshot turns
-        # that into an empty list (no hardware / nothing to report).
-        return interfaces
-
-    def get_network_snapshot(self) -> list[NetworkSnapshot] | None:
+    def get_network_snapshot(self) -> list[NetworkSnapshot]:
         current_time = time.monotonic()
-        current_stats = self._get_raw_stats()
+        
+        try:
+            current_stats = psutil.net_io_counters(pernic=True)
+            if_stats = psutil.net_if_stats()
+        except Exception:
+            return []
 
-        # First run: prime the baseline and return empty.
-        if self._last_stats is None or self._last_time is None:
-            self._last_stats = current_stats
+        if self._last_net_stats is None:
+            self._last_net_stats = current_stats
             self._last_time = current_time
             return []
 
-        # If no physical interfaces remain, return None (No Hardware).
-        if not current_stats and not self._last_stats:
-            return None
+        duration = current_time - self._last_time
+        snapshots = []
 
-        snapshots: list[NetworkSnapshot] = []
-        elapsed_time = max(0.001, current_time - self._last_time)
-        all_interfaces = set(self._last_stats.keys()).union(current_stats.keys())
+        if duration <= 0:
+            return []
 
-        for interface in sorted(all_interfaces):
-            # State 1: interface disconnected mid-session.
-            if interface not in current_stats:
-                last = self._last_stats.get(interface, {})
-                snapshots.append(NetworkSnapshot(
-                    interface=interface,
-                    status="DISCONNECTED",
-                    download_bps=0.00,
-                    upload_bps=0.00,
-                    rx_errors=last.get("rx_errs", 0),
-                    tx_errors=last.get("tx_errs", 0),
-                    rx_drops=last.get("rx_drop", 0),
-                    tx_drops=last.get("tx_drop", 0),
-                    total_bytes=last.get("rx_bytes", 0) + last.get("tx_bytes", 0),
-                ))
+        for name, current in current_stats.items():
+            # FIX: Removed "lo" from keywords. Use strict equality below.
+            bad_keywords = ["loopback", "vethernet", "virtual", "wsl", "pseudo", "bluetooth"]
+            
+            # Strict equality for Linux/WSL loopback, substring match for the rest
+            if name.lower() == "lo" or any(bad in name.lower() for bad in bad_keywords):
                 continue
 
-            # State 2: interface freshly hot-plugged in mid-session.
-            if interface not in self._last_stats:
-                stats_dict = current_stats.get(interface, {})
-                rx = stats_dict.get("rx_bytes", 0)
-                tx = stats_dict.get("tx_bytes", 0)
-                snapshots.append(NetworkSnapshot(
-                    interface=interface,
-                    status="CONNECTING",
-                    download_bps=0.00,
-                    upload_bps=0.00,
-                    rx_errors=stats_dict.get("rx_errs", 0),
-                    tx_errors=stats_dict.get("tx_errs", 0),
-                    rx_drops=stats_dict.get("rx_drop", 0),
-                    tx_drops=stats_dict.get("tx_drop", 0),
-                    total_bytes=rx + tx,
-                ))
+            if name not in self._last_net_stats:
                 continue
 
-            # State 3: standard operational connected calculations.
-            current = current_stats[interface]
-            last = self._last_stats[interface]
+            status = "CONNECTED" if (name in if_stats and if_stats[name].isup) else "DISCONNECTED"
 
-            diff_rx = max(0, current["rx_bytes"] - last["rx_bytes"])
-            diff_tx = max(0, current["tx_bytes"] - last["tx_bytes"])
+            old = self._last_net_stats[name]
 
-            rx_bps = diff_rx / elapsed_time
-            tx_bps = diff_tx / elapsed_time
-            total_bytes = current["rx_bytes"] + current["tx_bytes"]
+            down_delta = max(0, current.bytes_recv - old.bytes_recv)
+            up_delta = max(0, current.bytes_sent - old.bytes_sent)
+
+            download_bps = down_delta / duration
+            upload_bps = up_delta / duration
 
             snapshots.append(NetworkSnapshot(
-                interface=interface,
-                status="CONNECTED",
-                download_bps=rx_bps,
-                upload_bps=tx_bps,
-                rx_errors=current['rx_errs'],
-                tx_errors=current['tx_errs'],
-                rx_drops=current['rx_drop'],
-                tx_drops=current['tx_drop'],
-                total_bytes=total_bytes,
+                interface=name,
+                status=status,
+                download_bps=download_bps,
+                upload_bps=upload_bps,
+                rx_errors=current.errin,
+                tx_errors=current.errout,
+                rx_drops=current.dropin,
+                tx_drops=current.dropout,
+                total_bytes=current.bytes_recv + current.bytes_sent
             ))
 
-        # Preserve baseline across empty ticks so we keep emitting
-        # DISCONNECTED for previously-seen interfaces.
-        if current_stats:
-            self._last_stats = current_stats
-            self._last_time = current_time
+        self._last_net_stats = current_stats
+        self._last_time = current_time
 
         return snapshots

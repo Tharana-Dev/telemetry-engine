@@ -52,13 +52,9 @@ class UniversalDiskSampler:
                 
             previous = self._last_io_stats[name]
 
-            read_delta = current.read_bytes - previous.read_bytes
-            write_delta = current.write_bytes - previous.write_bytes
-
-            if read_delta < 0 or write_delta < 0:
-                self._last_io_stats = current_stats
-                self._last_time = current_time
-                return []
+            # FIX: Use max(0, ...) to clamp negative deltas (drive reset) to 0
+            read_delta = max(0, current.read_bytes - previous.read_bytes)
+            write_delta = max(0, current.write_bytes - previous.write_bytes)
 
             read_bps = read_delta / duration
             write_bps = write_delta / duration

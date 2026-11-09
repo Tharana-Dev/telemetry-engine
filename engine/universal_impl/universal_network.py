@@ -29,35 +29,26 @@ class UniversalNetworkSampler:
             return []
 
         for name, current in current_stats.items():
-            bad_keywords = ["loopback", "vethernet", "virtual", "wsl", "pseudo", "bluetooth"]
+            # FIX: Added explicit "lo" filter for Linux/WSL loopback
+            bad_keywords = ["loopback", "lo", "vethernet", "virtual", "wsl", "pseudo", "bluetooth"]
             if any(bad in name.lower() for bad in bad_keywords):
                 continue
 
             if name not in self._last_net_stats:
                 continue
 
-            # 2. Get status FIRST
             status = "CONNECTED" if (name in if_stats and if_stats[name].isup) else "DISCONNECTED"
 
-            # 3. Skip disconnected interfaces (this is your new filter)
-            if status == "DISCONNECTED":
-                continue
+            # FIX: Removed `if status == "DISCONNECTED": continue`
+            # We want the UI to see the disconnected status!
 
             old = self._last_net_stats[name]
 
-            down_delta = current.bytes_recv - old.bytes_recv
-            up_delta = current.bytes_sent - old.bytes_sent
-            
-
-            if down_delta < 0:
-                down_delta = 0
-            if up_delta < 0:
-                up_delta = 0
+            down_delta = max(0, current.bytes_recv - old.bytes_recv)
+            up_delta = max(0, current.bytes_sent - old.bytes_sent)
 
             download_bps = down_delta / duration
             upload_bps = up_delta / duration
-            
-            status = "CONNECTED" if (name in if_stats and if_stats[name].isup) else "DISCONNECTED"
 
             snapshots.append(NetworkSnapshot(
                 interface=name,
