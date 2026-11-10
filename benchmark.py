@@ -1,13 +1,22 @@
 import time
 import tracemalloc
-from engine.linux_sampler import LinuxCollector
-from engine.linux_thermal import LinuxThermalSampler
 import inspect
+import platform
 
+# --- DYNAMIC IMPORTS BASED ON OS ---
+sys_type = platform.system()
 
-collector = LinuxCollector()
+if sys_type == "Linux":
+    from engine.linux_sampler import LinuxCollector
+    from engine.linux_thermal import LinuxThermalSampler
+    collector = LinuxCollector()
+    thermal_collector = LinuxThermalSampler()
+else:
+    from engine.universal_sampler import PsutilCollector
+    from engine.universal_impl.universal_thermal import UniversalThermalSampler
+    collector = PsutilCollector()
+    thermal_collector = UniversalThermalSampler()
 
-import time
 
 def benchmark_collector_method(method_to_run, total_runs=10, iterations_per_run=100):
     """
@@ -56,100 +65,90 @@ for name, func in inspect.getmembers(collector, predicate=inspect.ismethod):
     if not name.startswith("_") and name != "get_thermal_snapshot":
         methods.append((name, func))
 
-# 2. Run the benchmarks for each discovered method
 TARGET_LIMIT_MS = 3.8
+OUTPUT_FILE = f"optimization_results_{sys_type.lower()}.txt"
 
-# Run the benchmarks for each discovered method
-for method_name, method_func in methods:
-    print(f"\n========================================")
-    print(f"AUTOMATED BENCHMARK FOR: {method_name}")
-    print(f"========================================")
+print(f"Starting benchmark... Results will be saved to {OUTPUT_FILE}")
+
+# Open the file once and write everything to it
+with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
     
-    # 1. TIME BENCHMARK
-    time_results = benchmark_collector_method(method_func, total_runs=10, iterations_per_run=100)
-    
-    for run_data in time_results['per_run']:
-        print(f"Time - Run {run_data['run']} - Min: {run_data['min']:.4f} ms, Max: {run_data['max']:.4f} ms, Avg: {run_data['avg']:.4f} ms")
-    
-    overall = time_results['overall']
-    print(f"Time - Overall - Min: {overall['min']:.4f} ms, Max: {overall['max']:.4f} ms, Avg: {overall['avg']:.4f} ms")
-    
-    # 2. PERFORMANCE EVALUATION (TARGET < 3.8 ms)
-    actual_avg = overall['avg']
-    if actual_avg < TARGET_LIMIT_MS:
+    for method_name, method_func in methods:
+        f.write(f"\n========================================\n")
+        f.write(f"AUTOMATED BENCHMARK FOR: {method_name}\n")
+        f.write(f"========================================\n")
+        
+        # 1. TIME BENCHMARK
+        time_results = benchmark_collector_method(method_func, total_runs=10, iterations_per_run=100)
+        
+        for run_data in time_results['per_run']:
+            f.write(f"Time - Run {run_data['run']} - Min: {run_data['min']:.4f} ms, Max: {run_data['max']:.4f} ms, Avg: {run_data['avg']:.4f} ms\n")
+        
+        overall = time_results['overall']
+        f.write(f"Time - Overall - Min: {overall['min']:.4f} ms, Max: {overall['max']:.4f} ms, Avg: {overall['avg']:.4f} ms\n")
+        
+        # 2. PERFORMANCE EVALUATION (TARGET < 3.8 ms)
+        actual_avg = overall['avg']
+        if actual_avg < TARGET_LIMIT_MS:
+            status = "PASS"
+            factor = TARGET_LIMIT_MS / max(actual_avg, 0.000001)
+            f.write(f"Evaluation: {status} ({factor:.2f}x FASTER than target of {TARGET_LIMIT_MS} ms)\n")
+        else:
+            status = "FAIL"
+            factor = actual_avg / TARGET_LIMIT_MS
+            f.write(f"Evaluation: {status} ({factor:.2f}x SLOWER than target of {TARGET_LIMIT_MS} ms)\n")
+        
+        # 3. MEMORY BENCHMARK
+        tracemalloc.start()
+        for _ in range(1000):
+            method_func()
+        snap = tracemalloc.take_snapshot()
+        tracemalloc.stop()
+        
+        top_stats = snap.statistics('lineno')
+        f.write(f"\nTop Memory Allocations for {method_name}:\n")
+        for index, stat in enumerate(top_stats[:5], start=1):
+            f.write(f"  #{index}: {stat}\n")
+
+
+    # --- ISOLATED THERMAL BENCHMARK ---
+    f.write(f"\n========================================\n")
+    f.write(f"AUTOMATED BENCHMARK FOR: get_thermal_snapshot ({sys_type})\n")
+    f.write(f"========================================\n")
+
+    THERMAL_TARGET_LIMIT_MS = 1000.0  # 1 second target
+
+    thermal_results = benchmark_collector_method(
+        thermal_collector.get_thermal_snapshot, 
+        total_runs=3, 
+        iterations_per_run=5
+    )
+
+    for run_data in thermal_results['per_run']:
+        f.write(f"Time - Run {run_data['run']} - Min: {run_data['min']:.4f} ms, Max: {run_data['max']:.4f} ms, Avg: {run_data['avg']:.4f} ms\n")
+
+    thermal_overall = thermal_results['overall']
+    f.write(f"Time - Overall - Min: {thermal_overall['min']:.4f} ms, Max: {thermal_overall['max']:.4f} ms, Avg: {thermal_overall['avg']:.4f} ms\n")
+
+    actual_thermal_avg = thermal_overall['avg']
+    if actual_thermal_avg < THERMAL_TARGET_LIMIT_MS:
         status = "PASS"
-        factor = TARGET_LIMIT_MS / max(actual_avg, 0.000001)
-        print(f"Evaluation: {status} ({factor:.2f}x FASTER than target of {TARGET_LIMIT_MS} ms)")
+        factor = THERMAL_TARGET_LIMIT_MS / max(actual_thermal_avg, 0.000001)
+        f.write(f"Evaluation: {status} ({factor:.2f}x FASTER than target of {THERMAL_TARGET_LIMIT_MS} ms)\n")
     else:
         status = "FAIL"
-        factor = actual_avg / TARGET_LIMIT_MS
-        print(f"Evaluation: {status} ({factor:.2f}x SLOWER than target of {TARGET_LIMIT_MS} ms)")
-    
-    # 3. MEMORY BENCHMARK
+        factor = actual_thermal_avg / THERMAL_TARGET_LIMIT_MS
+        f.write(f"Evaluation: {status} ({factor:.2f}x SLOWER than target of {THERMAL_TARGET_LIMIT_MS} ms)\n")
+
     tracemalloc.start()
-    
-    for _ in range(10000):
-        method_func()
-        
-    snap = tracemalloc.take_snapshot()
+    for _ in range(50):
+        thermal_collector.get_thermal_snapshot()
+    thermal_snap = tracemalloc.take_snapshot()
     tracemalloc.stop()
-    
-    top_stats = snap.statistics('lineno')
-    print(f"\nTop Memory Allocations for {method_name}:")
-    for index, stat in enumerate(top_stats[:5], start=1):
-        print(f"  #{index}: {stat}")
 
+    top_thermal_stats = thermal_snap.statistics('lineno')
+    f.write(f"\nTop Memory Allocations for get_thermal_snapshot:\n")
+    for index, stat in enumerate(top_thermal_stats[:5], start=1):
+        f.write(f"  #{index}: {stat}\n")
 
-#get_thermal_snapshots is ignored
-#Because it spawns a subprocess (sensors -j) and initializes pynvml. 
-# Running that 10,000 times would take minutes and grind your CPU to a halt. 
-# Thermal is an external process, not a file read. 
-# It needs to be benchmarked separately if at all.
-
-#Testing Thermals in isolation
-print(f"\n========================================")
-print(f"AUTOMATED BENCHMARK FOR: get_thermal_snapshot")
-print(f"========================================")
-
-thermal_collector = LinuxThermalSampler()
-THERMAL_TARGET_LIMIT_MS = 1000.0  # 1 second target
-
-# --- TIME BENCHMARK (Reduced iterations due to subprocess overhead) ---
-# We use 3 runs of 5 iterations to accommodate the slow external tools (sensors/pynvml)
-thermal_results = benchmark_collector_method(
-    thermal_collector.get_thermal_snapshot, 
-    total_runs=3, 
-    iterations_per_run=5
-)
-
-for run_data in thermal_results['per_run']:
-    print(f"Time - Run {run_data['run']} - Min: {run_data['min']:.4f} ms, Max: {run_data['max']:.4f} ms, Avg: {run_data['avg']:.4f} ms")
-
-thermal_overall = thermal_results['overall']
-print(f"Time - Overall - Min: {thermal_overall['min']:.4f} ms, Max: {thermal_overall['max']:.4f} ms, Avg: {thermal_overall['avg']:.4f} ms")
-
-# --- PERFORMANCE EVALUATION (TARGET < 1000 ms) ---
-actual_thermal_avg = thermal_overall['avg']
-if actual_thermal_avg < THERMAL_TARGET_LIMIT_MS:
-    status = "PASS"
-    factor = THERMAL_TARGET_LIMIT_MS / max(actual_thermal_avg, 0.000001)
-    print(f"Evaluation: {status} ({factor:.2f}x FASTER than target of {THERMAL_TARGET_LIMIT_MS} ms)")
-else:
-    status = "FAIL"
-    factor = actual_thermal_avg / THERMAL_TARGET_LIMIT_MS
-    print(f"Evaluation: {status} ({factor:.2f}x SLOWER than target of {THERMAL_TARGET_LIMIT_MS} ms)")
-
-# --- MEMORY BENCHMARK ---
-tracemalloc.start()
-
-# Reduced loop to 50 iterations since subprocesses are memory heavy at runtime
-for _ in range(50):
-    thermal_collector.get_thermal_snapshot()
-    
-thermal_snap = tracemalloc.take_snapshot()
-tracemalloc.stop()
-
-top_thermal_stats = thermal_snap.statistics('lineno')
-print(f"\nTop Memory Allocations for get_thermal_snapshot:")
-for index, stat in enumerate(top_thermal_stats[:5], start=1):
-    print(f"  #{index}: {stat}")
+print(f"Benchmark complete. Open {OUTPUT_FILE} to view the results.")
