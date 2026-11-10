@@ -127,8 +127,12 @@ class UniversalThermalSampler:
                 try:
                     power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
                     power_watts = round(power_mw / 1000, 2)
-                except pynvml.NVMLError: power_watts = None
-
+                    # Add sanity check:
+                    if power_watts > 250.0:
+                        power_watts = None
+                except pynvml.NVMLError:
+                    power_watts = None
+                    
                 try: fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
                 except pynvml.NVMLError: fan_speed = None
 

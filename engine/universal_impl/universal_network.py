@@ -40,7 +40,10 @@ class UniversalNetworkSampler:
                 continue
 
             status = "CONNECTED" if (name in if_stats and if_stats[name].isup) else "DISCONNECTED"
-
+            
+            if status == "DISCONNECTED":
+                continue
+            
             old = self._last_net_stats[name]
 
             down_delta = max(0, current.bytes_recv - old.bytes_recv)
