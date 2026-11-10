@@ -23,3 +23,9 @@ telemetry.log
 *.log.*
 
 *.txt
+
+#packaging files
+main.build
+main.dist
+main.onefile-build
+*.exe
