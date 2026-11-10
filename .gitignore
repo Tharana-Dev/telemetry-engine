@@ -21,3 +21,5 @@ practice/
 telemetry.log
 *.log
 *.log.*
+
+*.txt

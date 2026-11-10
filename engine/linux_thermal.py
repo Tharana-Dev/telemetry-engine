@@ -301,9 +301,8 @@ class LinuxThermalSampler:
             # Use DMI board_vendor first, fallback to sensors mapping
             board_vendor=self._board_vendor or sensor_board_vendor,
             
-            # --- NEW: Pass the cached data ---
             cpu_name=self._cpu_name,
-            cpu_speed_mhz=self._cpu_speed_mhz,
+            cpu_base_speed_mhz= self._cpu_speed_mhz,
             igpu_name=self._igpu_name,
         )
 

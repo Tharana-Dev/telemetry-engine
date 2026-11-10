@@ -12,6 +12,10 @@ from cli.dashboard import build_dashboard
 from cli.data_collector import TelemetryWorker, gather_snapshots
 from engine.universal_impl.universal_thermal import is_admin
 
+# --- TOP-LEVEL IMPORTS (required for patch() in tests) ---
+from engine.linux_sampler import LinuxCollector
+from engine.universal_sampler import PsutilCollector
+
 
 def main():
     console = Console()
@@ -30,14 +34,12 @@ def main():
     # ---- 2. Initialize the Correct Collector ----------------------
     if sys_type == "Linux":
         try:
-            from engine.linux_sampler import LinuxCollector
             data = LinuxCollector()
         except Exception as e:
             data = PsutilCollector()
             fallback_active = True
             fallback_reason = type(e).__name__
     else:
-        from engine.universal_sampler import PsutilCollector
         data = PsutilCollector()
         
     if hasattr(data, "get_system_health"):
@@ -52,11 +54,9 @@ def main():
     worker_thread.start()
 
     # ---- 4. UI Layout Definition ----------------------------------
-    # Current active snapshot object used to paint the UI
     current_snapshots = None
 
     def compose() -> Group:
-        # Falls back to an empty dictionary or initial structure if the thread hasn't caught up
         table = build_dashboard(
             current_snapshots, 
             sys_type, 
@@ -82,22 +82,20 @@ def main():
         with Live(
             initial_ui,
             refresh_per_second=4,
-            screen=True,  # Alt-screen buffer mode (cleans terminal on exit)
+            screen=True,
             transient=False,
         ) as live:
             
             while not stop_event.is_set():
-                time.sleep(1.0)  # UI Refresh rate tick
+                time.sleep(1.0)
                 
-                # Drain the buffer to find the single most recent snapshot
                 new_snapshot = None
                 while True:
                     try:
                         new_snapshot = buffer.popleft()
                     except IndexError:
-                        break  # Buffer completely drained
+                        break
                 
-                # If the background thread has delivered updates, refresh UI
                 if new_snapshot is not None:
                     current_snapshots = new_snapshot
                     live.update(compose())
@@ -105,7 +103,7 @@ def main():
     # ---- 7. Graceful Shutdown -------------------------------------
     except KeyboardInterrupt:
         stop_event.set()
-        worker_thread.join(timeout=2.0)  # Let worker cleanly stop polling
+        worker_thread.join(timeout=2.0)
         console.print("\n[bold green]Shutdown cleanly.[/]")
 
 if __name__ == "__main__":

@@ -10,19 +10,16 @@ class MemorySnapshot:
 @dataclass(frozen=True)
 class CpuSnapshot:
     usage_pct: float | None
-    current_freq_mhz: int | None = None  # <--- NEW: Live dynamic speed
-    
+    current_freq_mhz: int | None = None  # <--- Live speed
+
 @dataclass(frozen=True)
 class BatterySnapshot:
-    # 1. Main Status & Core Metrics
-    online: bool | None                       # From AC1/online (True if wall power is connected)
-    status: str | None                        # From BAT1/status ('Charging', 'Discharging', 'Full', 'N/A')
-    capacity: int | None                      # From BAT1/capacity (0-100% fuel gauge); None if missing
-
-    # 2. Live Power Dynamics
-    power_watts: float | None                 # Calculated from BAT1/power_now (divided by 1,000,000)
-    hours_left: float | None                  # Calculated from BAT1/energy_now / BAT1/power_now
-    health_percent: float | None              # Calculated from (energy_full / energy_full_design) * 100
+    online: bool | None
+    status: str | None
+    capacity: int | None
+    power_watts: float | None
+    hours_left: float | None
+    health_percent: float | None
 
 @dataclass(frozen=True)
 class GpuInfo:
@@ -42,11 +39,11 @@ class ThermalSnapshot:
     system_fans: dict[str, int] | None = None
     gpu_available: bool = True
     sensor_available: bool = True
-    cpu_vendor: str | None = "Unknown"       # e.g., "AMD" or "Intel"
-    cpu_name: str | None = None              # e.g., "AMD Ryzen 7 170 with Radeon Graphics"
-    cpu_base_speed_mhz: int | None = None    # <--- RENAMED from cpu_speed_mhz
-    board_vendor: str | None = "Unknown"     # e.g., "ASUSTeK COMPUTER INC. FA607NUQ"
-    igpu_name: str | None = None             # e.g., "AMD Radeon(TM) Graphics"
+    cpu_vendor: str | None = "Unknown"
+    cpu_name: str | None = None
+    cpu_base_speed_mhz: int | None = None    # <--- Base speed
+    board_vendor: str | None = "Unknown"
+    igpu_name: str | None = None
     gpu_error: str | None = None
     sensor_error: str | None = None
     gpu_usage: int | None = None
@@ -54,7 +51,6 @@ class ThermalSnapshot:
     gpus: list[GpuInfo] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        """Automatically fills legacy properties from the first GPU if not set."""
         if self.gpus and (self.gpu_temp is None and self.gpu_fan is None):
             first_gpu = self.gpus[0]
             object.__setattr__(self, "gpu_temp", first_gpu.temperature_c)
@@ -65,8 +61,8 @@ class ThermalSnapshot:
 @dataclass(frozen=True)
 class DiskIOSnapshot:
     device: str | None
-    read_bps: float | None          # raw bytes/sec
-    write_bps: float | None         # raw bytes/sec
+    read_bps: float | None
+    write_bps: float | None
 
 @dataclass(frozen=True)
 class DiskSpaceSnapshot:

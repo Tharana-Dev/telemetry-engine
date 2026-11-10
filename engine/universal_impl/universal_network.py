@@ -8,14 +8,17 @@ class UniversalNetworkSampler:
         self._last_net_stats = None
         self._last_time: float | None = None
 
-    def get_network_snapshot(self) -> list[NetworkSnapshot]:
+    def get_network_snapshot(self) -> list[NetworkSnapshot] | None:
         current_time = time.monotonic()
         
         try:
             current_stats = psutil.net_io_counters(pernic=True)
             if_stats = psutil.net_if_stats()
         except Exception:
-            return []
+            return None
+
+        if not current_stats:
+            return None
 
         if self._last_net_stats is None:
             self._last_net_stats = current_stats
@@ -29,9 +32,8 @@ class UniversalNetworkSampler:
             return []
 
         for name, current in current_stats.items():
-            # FIX: Added explicit "lo" filter for Linux/WSL loopback
-            bad_keywords = ["loopback", "lo", "vethernet", "virtual", "wsl", "pseudo", "bluetooth"]
-            if any(bad in name.lower() for bad in bad_keywords):
+            bad_keywords = ["loopback", "vethernet", "virtual", "wsl", "pseudo", "bluetooth"]
+            if name.lower() == "lo" or any(bad in name.lower() for bad in bad_keywords):
                 continue
 
             if name not in self._last_net_stats:
@@ -39,30 +41,20 @@ class UniversalNetworkSampler:
 
             status = "CONNECTED" if (name in if_stats and if_stats[name].isup) else "DISCONNECTED"
 
-            # FIX: Removed `if status == "DISCONNECTED": continue`
-            # We want the UI to see the disconnected status!
-
             old = self._last_net_stats[name]
 
             down_delta = max(0, current.bytes_recv - old.bytes_recv)
             up_delta = max(0, current.bytes_sent - old.bytes_sent)
 
-            download_bps = down_delta / duration
-            upload_bps = up_delta / duration
-
             snapshots.append(NetworkSnapshot(
-                interface=name,
-                status=status,
-                download_bps=download_bps,
-                upload_bps=upload_bps,
-                rx_errors=current.errin,
-                tx_errors=current.errout,
-                rx_drops=current.dropin,
-                tx_drops=current.dropout,
+                interface=name, status=status,
+                download_bps=down_delta / duration, upload_bps=up_delta / duration,
+                rx_errors=current.errin, tx_errors=current.errout,
+                rx_drops=current.dropin, tx_drops=current.dropout,
                 total_bytes=current.bytes_recv + current.bytes_sent
             ))
 
         self._last_net_stats = current_stats
         self._last_time = current_time
 
-        return snapshots
+        return snapshots if snapshots else None

@@ -165,32 +165,30 @@ def test_hotplug_edge_case(tmp_path, monkeypatch):
     assert enx.total_bytes == 3000         # (2000 + 1000) bytes
 
 
-def test_missing_netdev_file_raises(tmp_path, monkeypatch):
-    """Fatal: /proc/net/dev missing -> FileNotFoundError bubbles.
-
-    Was: swallowed into InternalResult(Errors.FILE_NOT_FOUND) and turned
-    into an empty return list. Now the open() call is fatal.
+def test_missing_netdev_file_returns_none(tmp_path, monkeypatch):
+    """Fatal: /proc/net/dev missing -> internal catch -> returns None.
+    
+    The refactored code catches the FileNotFoundError internally and returns 
+    None so the UI can display "Unavailable".
     """
     _install_clock(monkeypatch, [1.0, 2.0])
     sampler = LinuxNetworkSampler(netdev_path=str(tmp_path / "nope"))
 
-    with pytest.raises(FileNotFoundError):
-        sampler.get_network_snapshot()
+    assert sampler.get_network_snapshot() is None
 
 
-def test_no_valid_interfaces_returns_empty_list(tmp_path, monkeypatch):
-    """No hardware: file exists but no matching physical interfaces -> [].
-
-    First tick always returns [] anyway (baseline priming); this test drives
-    a second tick with no matching interfaces to confirm the empty-list
-    no-hardware path.
+def test_no_valid_interfaces_returns_none(tmp_path, monkeypatch):
+    """No hardware: file exists but no matching physical interfaces -> None.
+    
+    First tick normally returns [] (baseline priming). But if the file only
+    contains 'lo', `_get_raw_stats` filters it out and returns None immediately.
     """
     t = MOCK_HEADER + (
         "    lo: 100 1 0 0 0 0 0 0 100 1 0 0 0 0 0 0\n"  # lo is filtered out
     )
 
     sampler, path = _make_sampler(tmp_path, monkeypatch, t, [1.0, 2.0])
-    assert sampler.get_network_snapshot() == []   # baseline
-
-    _write(tmp_path, t)                           # same content, second tick
+    
+    # Because 'lo' is filtered, the very first tick returns None
     assert sampler.get_network_snapshot() is None
+    

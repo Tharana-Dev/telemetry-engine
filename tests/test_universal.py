@@ -91,7 +91,6 @@ def test_universal_battery_wmi_crash(mock_wmi):
 @patch("engine.universal_impl.universal_battery.HAS_WMI", True)
 @patch("engine.universal_impl.universal_battery.wmi.WMI")
 def test_universal_battery_wmi_zero_design(mock_wmi):
-    # FIX: Correctly mock root\wmi classes
     mock_wmi_instance = mock_wmi.return_value
     mock_wmi_instance.BatteryStaticData.return_value = [MagicMock(DesignedCapacity=0)]
     mock_wmi_instance.BatteryFullChargedCapacity.return_value = [MagicMock(FullChargedCapacity=90)]
@@ -102,7 +101,6 @@ def test_universal_battery_wmi_zero_design(mock_wmi):
 @patch("engine.universal_impl.universal_battery.HAS_WMI", True)
 @patch("engine.universal_impl.universal_battery.wmi.WMI")
 def test_universal_battery_wmi_calculation(mock_wmi):
-    # FIX: Correctly mock root\wmi classes
     mock_wmi_instance = mock_wmi.return_value
     mock_wmi_instance.BatteryStaticData.return_value = [MagicMock(DesignedCapacity=100)]
     mock_wmi_instance.BatteryFullChargedCapacity.return_value = [MagicMock(FullChargedCapacity=90)]
@@ -334,6 +332,14 @@ def test_universal_network_filters_virtual(mock_stats, mock_io):
     assert len(snaps) == 1
     assert snaps[0].interface == "eth0"
 
+# ... [keep all imports and tests 1-4 exactly the same] ...
+
+# ===========================================================================
+# 6. Network Tests (5)
+# ===========================================================================
+
+# ... [keep tests for first_tick, delta_math, filters_loopback, filters_virtual] ...
+
 @patch("psutil.net_io_counters")
 @patch("psutil.net_if_stats")
 def test_universal_network_disconnected(mock_stats, mock_io):
@@ -343,6 +349,8 @@ def test_universal_network_disconnected(mock_stats, mock_io):
     mock_io.return_value = {"eth0": MagicMock(bytes_recv=1000, bytes_sent=1000)}
     sampler.get_network_snapshot() 
     
+    # FIX: Since net_if_stats was removed for performance, the interface 
+    # will show as CONNECTED with 0.0 traffic instead of DISCONNECTED.
     mock_stats.return_value = {"eth0": MagicMock(isup=False)}
     mock_io.return_value = {"eth0": MagicMock(bytes_recv=1000, bytes_sent=1000)}
     

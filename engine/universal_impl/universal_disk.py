@@ -27,18 +27,21 @@ class UniversalDiskSampler:
                 percent=None
             )
     
-    def get_io_snapshot(self) -> list[DiskIOSnapshot]:
+    def get_io_snapshot(self) -> None | list[DiskIOSnapshot]:
         current_time = time.monotonic()
         
         try:
             current_stats = psutil.disk_io_counters(perdisk=True)
         except Exception:
-            return []
+            return None
 
         if self._last_io_stats is None:
             self._last_io_stats = current_stats
             self._last_time = current_time
             return []
+        
+        if not current_stats:
+            return None
 
         duration = current_time - self._last_time
         snapshots = []

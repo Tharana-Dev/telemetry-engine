@@ -6,7 +6,6 @@ from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
-# Assuming these are in your formatters module now
 from cli.formatters import (
     _fmt, 
     format_speed_bits, 
@@ -15,9 +14,6 @@ from cli.formatters import (
     format_disk_size
 )
 
-# =====================================================================
-# UI LAYER — rich rendering. Never touches `data`. Never crashes.
-# =====================================================================
 def build_dashboard(
     snapshots: dict,
     sys_type: str,
@@ -27,8 +23,6 @@ def build_dashboard(
     health: dict,
     admin_mode: bool
 ) -> Group:
-    """Render the two-column dashboard as a rich Group."""
-
     cpu, cpu_error = snapshots["cpu"]
     memory, memory_error = snapshots["memory"]
     battery, battery_error = snapshots["battery"]
@@ -37,72 +31,52 @@ def build_dashboard(
     disk_space, disk_space_error = snapshots["disk_space"]
     network_data, network_error = snapshots["network"]
 
-    # ---- styles --------------------------------------------------------
     SECTION_STYLE = Style(color="cyan", bold=True)
     RULE_STYLE = Style(color="bright_black")
     ERROR_STYLE = Style(color="red", bold=True)
     DIM_STYLE = Style(color="bright_black")
     WARN_STYLE = Style(color="yellow")
 
-    # ---- helpers -------------------------------------------------------
     def section(title: str) -> Text:
         return Text(title, style=SECTION_STYLE)
 
     def rule() -> Text:
-        return Text("─" * 36, style=RULE_STYLE)  # Widened to match new table width
+        return Text("─" * 36, style=RULE_STYLE)
 
     def value_style(pct) -> str:
-        """Returns the text color matching the progress bar."""
         if pct is None:
             return "bright_black"
         try:
             val = float(pct)
         except (TypeError, ValueError):
             return "bright_black"
-        
-        if val >= 85:
-            return "red"
-        if val >= 60:
-            return "yellow"
+        if val >= 85: return "red"
+        if val >= 60: return "yellow"
         return "green"
 
     def bar(pct, width: int = 20) -> ProgressBar:
-        """ProgressBar that pulses when unknown, and picks a threshold colour."""
         if pct is None:
             return ProgressBar(total=100, completed=50, width=width, pulse=True)
-        
         try:
             val = max(0.0, min(100.0, float(pct)))
         except (TypeError, ValueError):
             return ProgressBar(total=100, completed=50, width=width, pulse=True)
-
-        return ProgressBar(
-            total=100,
-            completed=val,
-            width=width,
-            complete_style=value_style(val),
-        )
+        return ProgressBar(total=100, completed=val, width=width, complete_style=value_style(val))
 
     def three_col_grid() -> Table:
-        """label | bar | value"""
         g = Table.grid(padding=(0, 1))
-        g.add_column(width=14)  # Fixed width for labels
-        g.add_column(width=22)  # Bar slot
-        g.add_column()          # Value
-        return g
-
-    def two_col_grid() -> Table:
-        """label | value"""
-        g = Table.grid(padding=(0, 1))
-        g.add_column(width=18)  # Fixed width for labels (wider for network/disk)
+        g.add_column(width=14)
+        g.add_column(width=22)
         g.add_column()
         return g
 
-    # =================================================================
-    # LEFT COLUMN — System & Hardware
-    # =================================================================
-    left_items: list = []
+    def two_col_grid() -> Table:
+        g = Table.grid(padding=(0, 1))
+        g.add_column(width=18)
+        g.add_column()
+        return g
 
+    left_items: list = []
     left_items.append(section("SYSTEM & HARDWARE"))
     left_items.append(rule())
 
@@ -116,6 +90,7 @@ def build_dashboard(
     else:
         left_items.append(Text("Engine Mode:  Linux Native (/proc)"))
     left_items.append(Text(""))
+    
     if sys_type == "Windows":
         admin_str = "Yes" if admin_mode else "No (CPU Temps Blocked)"
         left_items.append(Text(f"Admin Mode:  {admin_str}", style="green" if admin_mode else "yellow"))
@@ -133,13 +108,19 @@ def build_dashboard(
             bar(cpu.usage_pct),
             Text(_fmt(cpu.usage_pct, "%"), style=value_style(cpu.usage_pct)),
         )
-        # --- NEW: Live Dynamic CPU Speed ---
+        # LIVE SPEED
+        # LIVE SPEED
         if getattr(cpu, "current_freq_mhz", None):
-            cpu_mem.add_row(
-                Text("CPU Speed:"),
-                Text(""), # No bar
-                Text(f"{cpu.current_freq_mhz / 1000:.2f} GHz")
-            )
+            try:
+                speed_str = f"{cpu.current_freq_mhz / 1000:.2f} GHz"
+            except (TypeError, ValueError):
+                speed_str = None
+            if speed_str:
+                cpu_mem.add_row(
+                    Text("CPU Speed:"),
+                    Text(""),
+                    Text(speed_str),
+                )
 
     if health.get("memory") is not None or memory_error is not None:
         cpu_mem.add_row(Text("Memory:"), bar(None), Text("Unavailable (Error)", style=ERROR_STYLE))
@@ -205,19 +186,20 @@ def build_dashboard(
     th = two_col_grid()
 
     if health.get("thermal") is not None or thermal_error is not None:
-        # Extract the actual error string
         err_msg = health.get("thermal") or thermal_error or "Unknown Error"
         th.add_row(Text("Status:"), Text(f"Unavailable ({err_msg})", style=ERROR_STYLE))
     elif thermal is None:
         th.add_row(Text("Status:"), Text("Unavailable", style=DIM_STYLE))
     else:
-        # --- Hardware Info ---
         cpu_name = _fmt(getattr(thermal, "cpu_name", None))
         
-        # --- NEW: Static Base Speed ---
+        # STATIC BASE SPEED
         base_speed = ""
         if getattr(thermal, "cpu_base_speed_mhz", None):
-            base_speed = f" ({thermal.cpu_base_speed_mhz / 1000:.1f} GHz Base)"
+            try:
+                base_speed = f" ({thermal.cpu_base_speed_mhz / 1000:.1f} GHz Base)"
+            except (TypeError, ValueError):
+                base_speed = ""
             
         th.add_row(Text("CPU:"), Text(f"{cpu_name}{base_speed}"))
         
@@ -226,16 +208,14 @@ def build_dashboard(
         if getattr(thermal, "igpu_name", None):
             th.add_row(Text("iGPU:"), Text(thermal.igpu_name))
             
-        th.add_row(Text(""), Text(""))  # Blank line for visual separation
+        th.add_row(Text(""), Text(""))
         
-        # --- Temps ---
         if getattr(thermal, "sensor_available", False):
             if getattr(thermal, "cpu_temp", None) is not None:
                 cpu_t = _fmt(thermal.cpu_temp, "°C")
                 cpu_m = _fmt(getattr(thermal, "cpu_temp_max", None), "°C")
                 th.add_row(Text("CPU Temp:"), Text(f"{cpu_t} (Max: {cpu_m})"))
             elif getattr(thermal, "sensor_error", None):
-                # Use style="yellow" instead of [yellow] tags
                 th.add_row(Text("CPU Temp:"), Text(thermal.sensor_error, style="yellow"))
             else:
                 th.add_row(Text("CPU Temp:"), Text("N/A", style=DIM_STYLE))
@@ -246,19 +226,26 @@ def build_dashboard(
         else:
             th.add_row(Text("Sensor:"), Text("Unavailable", style=DIM_STYLE))
 
-        # --- GPU ---
         if getattr(thermal, "gpu_available", False):
             if getattr(thermal, "gpus", None):
                 for gpu in thermal.gpus:
                     th.add_row(Text(f"GPU [{_fmt(gpu.index)}]:"), Text(_fmt(gpu.name)))
-                    th.add_row(
-                        Text(""),
-                        Text(
-                            f"{_fmt(gpu.temperature_c, '°C')} | "
-                            f"{_fmt(gpu.utilization_pct, '%')} | "
-                            f"{_fmt(gpu.power_w, 'W')}"
-                        ),
-                    )
+                    
+                    is_asleep = (gpu.temperature_c is None and gpu.utilization_pct is None and gpu.power_w is None)
+                    
+                    if is_asleep:
+                        th.add_row(Text(""), Text("Asleep (Powered Down to save battery)", style="bright_black italic"))
+                    else:
+                        fan_str = f" | Fan: {gpu.fan_speed_pct}%" if getattr(gpu, "fan_speed_pct", None) is not None else ""
+                        th.add_row(
+                            Text(""),
+                            Text(
+                                f"{_fmt(gpu.temperature_c, '°C')} | "
+                                f"{_fmt(gpu.utilization_pct, '%')} | "
+                                f"{_fmt(gpu.power_w, 'W')}"
+                                f"{fan_str}"
+                            ),
+                        )
             else:
                 th.add_row(Text("GPU:"), Text("N/A", style=DIM_STYLE))
         else:
@@ -367,9 +354,8 @@ def build_dashboard(
 
     header = Text("SYSTEM TELEMETRY ENGINE", style="bold white on blue", justify="center")
 
-    # Group everything together
     return Group(
         header,
-        Text(""), # blank line
+        Text(""),
         outer
     )

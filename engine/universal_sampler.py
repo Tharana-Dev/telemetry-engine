@@ -15,8 +15,6 @@ import time
 
 class PsutilCollector(BaseSystemCollector):
     def __init__(self) -> None:
-        # Mirroring LinuxCollector's architecture for init isolation.
-        # A failed sampler here won't take down the whole dashboard.
         self.cpu_sampler: UniversalCpuSampler | None = None
         self.mem_sampler: UniversalMemorySampler | None = None
         self.battery_sampler: UniversalBatterySampler | None = None
@@ -72,7 +70,6 @@ class PsutilCollector(BaseSystemCollector):
             logger.error(f"Initialization failed for Universal Network sampler: {e}")
 
     def _call(self, name, sampler, init_error, method_name):
-        """K2: Centralized execution with log deduplication and runtime error tracking."""
         if sampler is None:
             return None
         try:
@@ -82,11 +79,12 @@ class PsutilCollector(BaseSystemCollector):
         except Exception as e:
             error_msg = str(e)
             current_time = time.monotonic()
+            
             is_duplicate = (error_msg == self._last_logged_error)
             is_recent = (current_time - self._last_log_time < 60)
             
             if not (is_duplicate and is_recent):
-                logger.error(f"Runtime error in {name} sampler: {e}", exc_info=True)
+                logger.error(f"Universal runtime error in {name}: {e}", exc_info=True)
                 self._last_logged_error = error_msg
                 self._last_log_time = current_time
                 
