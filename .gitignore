@@ -25,7 +25,11 @@ telemetry.log
 *.txt
 
 #packaging files
-main.build
-main.dist
-main.onefile-build
+main.build/
+main.dist/
+main.onefile-build/
+build/
 *.exe
+
+*.xml
+*.zip
