@@ -17,21 +17,24 @@ class UniversalNetworkSampler:
         except Exception:
             return None
 
+        # No interfaces at all -> genuinely no network hardware.
         if not current_stats:
             return None
 
+        # First run: prime the baseline and return empty.
         if self._last_net_stats is None:
             self._last_net_stats = current_stats
             self._last_time = current_time
             return []
 
         duration = current_time - self._last_time
-        snapshots = []
-
         if duration <= 0:
             return []
 
+        snapshots = []
+
         for name, current in current_stats.items():
+            # Filter out virtual and loopback adapters
             bad_keywords = ["loopback", "vethernet", "virtual", "wsl", "pseudo", "bluetooth"]
             if name.lower() == "lo" or any(bad in name.lower() for bad in bad_keywords):
                 continue
@@ -39,25 +42,28 @@ class UniversalNetworkSampler:
             if name not in self._last_net_stats:
                 continue
 
+            # Check physical link state
             status = "CONNECTED" if (name in if_stats and if_stats[name].isup) else "DISCONNECTED"
-            
-            if status == "DISCONNECTED":
-                continue
-            
+
             old = self._last_net_stats[name]
 
             down_delta = max(0, current.bytes_recv - old.bytes_recv)
             up_delta = max(0, current.bytes_sent - old.bytes_sent)
 
             snapshots.append(NetworkSnapshot(
-                interface=name, status=status,
-                download_bps=down_delta / duration, upload_bps=up_delta / duration,
-                rx_errors=current.errin, tx_errors=current.errout,
-                rx_drops=current.dropin, tx_drops=current.dropout,
+                interface=name,
+                status=status,
+                download_bps=down_delta / duration,
+                upload_bps=up_delta / duration,
+                rx_errors=current.errin,
+                tx_errors=current.errout,
+                rx_drops=current.dropin,
+                tx_drops=current.dropout,
                 total_bytes=current.bytes_recv + current.bytes_sent
             ))
 
         self._last_net_stats = current_stats
         self._last_time = current_time
 
+        # If we have valid interfaces (even if they are disconnected), return them.
         return snapshots if snapshots else None

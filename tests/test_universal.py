@@ -1,3 +1,4 @@
+import platform
 import pytest
 import time
 from unittest.mock import patch, MagicMock
@@ -12,6 +13,9 @@ from engine.universal_impl.universal_network import UniversalNetworkSampler
 from engine.universal_sampler import PsutilCollector 
 
 import pynvml
+
+IS_WINDOWS = platform.system() == "Windows"
+
 
 # ===========================================================================
 # 1. CPU Tests (3)
@@ -82,12 +86,14 @@ def test_universal_battery_no_wmi():
     sampler = UniversalBatterySampler()
     assert sampler._health_percent is None
 
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows-only test")
 @patch("engine.universal_impl.universal_battery.HAS_WMI", True)
 @patch("engine.universal_impl.universal_battery.wmi.WMI", side_effect=Exception("WMI crash"))
 def test_universal_battery_wmi_crash(mock_wmi):
     sampler = UniversalBatterySampler()
     assert sampler._health_percent is None
 
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows-only test")
 @patch("engine.universal_impl.universal_battery.HAS_WMI", True)
 @patch("engine.universal_impl.universal_battery.wmi.WMI")
 def test_universal_battery_wmi_zero_design(mock_wmi):
@@ -98,6 +104,7 @@ def test_universal_battery_wmi_zero_design(mock_wmi):
     sampler = UniversalBatterySampler()
     assert sampler._health_percent is None
 
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows-only test")
 @patch("engine.universal_impl.universal_battery.HAS_WMI", True)
 @patch("engine.universal_impl.universal_battery.wmi.WMI")
 def test_universal_battery_wmi_calculation(mock_wmi):
@@ -138,12 +145,14 @@ def test_universal_battery_discharging(mock_bat):
 # 4. Thermal Tests (6)
 # ===========================================================================
 
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows-only test")
 @patch("ctypes.windll.shell32.IsUserAnAdmin", return_value=False, create=True)
 def test_universal_thermal_no_admin(mock_admin):
     sampler = UniversalThermalSampler()
     snap = sampler.get_thermal_snapshot()
     assert "Admin privileges" in snap.sensor_error
 
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows-only test")
 @patch("ctypes.windll.shell32.IsUserAnAdmin", return_value=True, create=True)
 @patch("builtins.__import__", side_effect=ImportError("WinTmp not found"))
 def test_universal_thermal_admin_but_wintmp_fails(mock_import, mock_admin):
@@ -166,12 +175,14 @@ def test_universal_thermal_nvml_lost_mid_session(mock_count, mock_init):
     sampler.get_thermal_snapshot()
     assert sampler.initialized is False
 
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows-only test")
 @patch("winreg.OpenKey", side_effect=FileNotFoundError, create=True)
 def test_universal_thermal_winreg_fallback(mock_open_key):
     sampler = UniversalThermalSampler()
     snap = sampler.get_thermal_snapshot()
     assert snap.cpu_name is None
 
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows-only test")
 @patch("engine.universal_impl.universal_thermal.wmi.WMI", side_effect=Exception("WMI crash"), create=True)
 def test_universal_thermal_wmi_fallback(mock_wmi):
     sampler = UniversalThermalSampler()
@@ -332,14 +343,6 @@ def test_universal_network_filters_virtual(mock_stats, mock_io):
     assert len(snaps) == 1
     assert snaps[0].interface == "eth0"
 
-# ... [keep all imports and tests 1-4 exactly the same] ...
-
-# ===========================================================================
-# 6. Network Tests (5)
-# ===========================================================================
-
-# ... [keep tests for first_tick, delta_math, filters_loopback, filters_virtual] ...
-
 @patch("psutil.net_io_counters")
 @patch("psutil.net_if_stats")
 def test_universal_network_disconnected(mock_stats, mock_io):
@@ -349,8 +352,6 @@ def test_universal_network_disconnected(mock_stats, mock_io):
     mock_io.return_value = {"eth0": MagicMock(bytes_recv=1000, bytes_sent=1000)}
     sampler.get_network_snapshot() 
     
-    # FIX: Since net_if_stats was removed for performance, the interface 
-    # will show as CONNECTED with 0.0 traffic instead of DISCONNECTED.
     mock_stats.return_value = {"eth0": MagicMock(isup=False)}
     mock_io.return_value = {"eth0": MagicMock(bytes_recv=1000, bytes_sent=1000)}
     
