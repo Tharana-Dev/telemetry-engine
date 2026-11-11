@@ -30,6 +30,7 @@ main.dist/
 main.onefile-build/
 build/
 *.exe
+telemetry-engine-linux
 
 *.xml
 *.zip
