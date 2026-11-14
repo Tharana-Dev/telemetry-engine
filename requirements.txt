@@ -13,3 +13,11 @@ pytest-qt==4.5.0
 # GUI Dependencies (Phase 2 - Upcoming)
 PySide6==6.12.0
 pyqtgraph==0.13.3
+
+# Windows-Specific Dependencies (Required for WMI/Registry queries)
+wmi==1.5.1
+pywin32==306
+
+# Hardware Sensors (Pinned to a stable pre-1.0 release to avoid LibreHardwareMonitor DLL conflicts)
+WinTmp==0.0.9
+pythonnet==3.0.3

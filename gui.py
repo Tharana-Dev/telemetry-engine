@@ -14,6 +14,7 @@ from ui.personalization import personalization
 from ui.system_probe import GetData
 from ui.theme import StyleSheets, ThemeColors, ThemeFonts
 from ui.pages.dashboard_page import DashboardPage
+from ui.pages.cpu_page import CpuPage
 
 class PlaceholderPage(QWidget):
     """Temporary page for the sectors we haven't built yet."""
@@ -79,8 +80,11 @@ class WelcomeWindow(QMainWindow):
         self.dashboard_page = DashboardPage(self)
         self.page_indices["dashboard"] = self.page_stack.addWidget(self.dashboard_page)
 
+        self.cpu_page = CpuPage(self)
+        self.page_indices["cpu"] = self.page_stack.addWidget(self.cpu_page)
+
         # Build placeholders for the rest
-        placeholder_ids = ["cpu", "memory", "gpu", "thermals", "disk", "network", "battery"]
+        placeholder_ids = ["memory", "gpu", "thermals", "disk", "network", "battery"]
         for page_id in placeholder_ids:
             placeholder = PlaceholderPage(page_id.upper(), self)
             self.page_indices[page_id] = self.page_stack.addWidget(placeholder)
@@ -110,6 +114,8 @@ class WelcomeWindow(QMainWindow):
         self.launchpad_panel.refresh_accent()
         if hasattr(self, 'dashboard_page'):
             self.dashboard_page.refresh_accent()
+        if hasattr(self, 'cpu_page'):
+            self.cpu_page.refresh_accent()
 
     def _restart_as_admin(self) -> None:
         if sys.platform != "win32":

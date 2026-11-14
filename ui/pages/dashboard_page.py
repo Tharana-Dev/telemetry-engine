@@ -1,4 +1,4 @@
-from PySide6.QtCore import QThread, QTimer, Qt
+from PySide6.QtCore import QThread, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QGridLayout, QWidget, QVBoxLayout
 

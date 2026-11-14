@@ -150,18 +150,35 @@ class UniversalThermalSampler:
         cpu_temp = None
         sensor_error = None
         
+        # --- 1. Try WinTmp (Most accurate) ---
         if self._wintmp_available:
             try:
                 cpu_temp = self._wintmp.CPU_Temp()
-            except Exception:
-                pass
+                if cpu_temp is None:
+                    sensor_error = "WinTmp returned None"
+            except Exception as e:
+                sensor_error = f"WinTmp failed: {e}"
         else:
-            sensor_error = "Admin privileges required for CPU Temp"
-            
+            sensor_error = self._wintmp_error or "WinTmp unavailable"
+
+        # --- 2. Fallback to WMI (ACPI Thermal Zone) ---
+        # If WinTmp failed or returned None, try WMI
+        if cpu_temp is None and HAS_WMI:
+            try:
+                w = wmi.WMI(namespace="root\\wmi")
+                # WMI returns temperature in tenths of a degree Kelvin
+                temp_kelvin = w.MSAcpi_ThermalZoneTemperature()[0].CurrentTemperature
+                cpu_temp = round((temp_kelvin / 10.0) - 273.15, 1)
+                sensor_error = None # Clear the error because WMI succeeded!
+            except Exception as e:
+                if not sensor_error:
+                    sensor_error = f"WMI Temp failed: {e}"
+
+        # --- 3. Construct the Snapshot ---
         return ThermalSnapshot(
             cpu_temp=cpu_temp,
-            cpu_temp_max=None,       # WinTmp doesn't provide max
-            system_fans=None,        # WinTmp doesn't provide fans
+            cpu_temp_max=None,       
+            system_fans=None,        
             gpus=gpus,
             gpu_available=bool(gpus),
             sensor_available=(cpu_temp is not None or bool(gpus)),
