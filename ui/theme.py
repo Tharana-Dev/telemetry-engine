@@ -1,32 +1,34 @@
 from dataclasses import dataclass
 
-from personalization import current_accent
+from ui.personalization import current_accent
 
 
 @dataclass(frozen=True)
 class ThemeColors:
-    # Surfaces
-    BG_BASE: str = "#0F172A"
-    BG_SURFACE: str = "#1E293B"
-    BG_SURFACE_HOVER: str = "#263349"
-    BG_CARD_ACTIVE: str = "#172554"
+    # Surfaces (From the image)
+    BG_BASE: str = "#111111"       # Pure Black from image
+    BG_SURFACE: str = "#1A1A1A"    # Slightly lighter grey for cards
+    BG_SURFACE_HOVER: str = "#262626"
+    BG_CARD_ACTIVE: str = "#1F1F1F"
 
     # Borders & Dividers
-    BORDER_SUBTLE: str = "#334155"
-    BORDER_ACCENT: str = "#38BDF8"
+    BORDER_SUBTLE: str = "#333333"
+    BORDER_ACCENT: str = "#C9EF35"  # Neon Lime
 
     # Typography
     TEXT_PRIMARY: str = "#F8FAFC"
-    TEXT_SECONDARY: str = "#94A3B8"
-    TEXT_MUTED: str = "#64748B"
+    TEXT_SECONDARY: str = "#A1A1AA"
+    TEXT_MUTED: str = "#71717A"
 
-    # Telemetry Accents (static fallbacks — live accent comes from personalization)
-    ACCENT_PRIMARY: str = "#38BDF8"
-    ACCENT_HOVER: str = "#0284C7"
-    ACCENT_PRESSED: str = "#0369A1"
-    STATUS_OK: str = "#10B981"
-    STATUS_WARN: str = "#F59E0B"
-    STATUS_ERR: str = "#EF4444"
+    # Telemetry Accents (Use the Lime and Pink!)
+    ACCENT_PRIMARY: str = "#C9EF35" # Neon Lime
+    ACCENT_HOVER: str = "#B5D82A"
+    ACCENT_PRESSED: str = "#9EBF1E"
+    
+    STATUS_OK: str = "#C9EF35"      # Lime for OK
+    STATUS_WARN: str = "#FFD700"
+    # Gold for warning
+    STATUS_ERR: str = "#FF2B93"     # Hot Pink for Errors!
 
 
 @dataclass(frozen=True)
@@ -156,6 +158,16 @@ class StyleSheets:
         QCheckBox::indicator:checked {{
             background-color: {accent.primary};
             border: 1px solid {accent.primary};
+        }}
+        
+        /* Retro Windows Tooltips */
+        QToolTip {{
+            background-color: #FFFFE1;
+            color: #000000;
+            border: 1px solid #000000;
+            padding: 2px;
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            font-size: 12px;
         }}
         """
 

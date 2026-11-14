@@ -16,11 +16,11 @@ class AccentPalette:
 
 
 ACCENT_PALETTES: tuple[AccentPalette, ...] = (
-    AccentPalette("Sky",     "#38BDF8", "#0284C7", "#0369A1"),
-    AccentPalette("Violet",  "#A78BFA", "#8B5CF6", "#7C3AED"),
-    AccentPalette("Emerald", "#34D399", "#10B981", "#059669"),
-    AccentPalette("Ember",   "#FB923C", "#F97316", "#EA580C"),
-    AccentPalette("Rose",    "#F472B6", "#EC4899", "#DB2777"),
+    AccentPalette("Lime",       "#C9EF35", "#B5D82A", "#9EBF1E"), # <-- New!
+    AccentPalette("Hot Pink",   "#FF2B93", "#E61F80", "#CC146D"), # <-- New!
+    AccentPalette("Sky",        "#38BDF8", "#0284C7", "#0369A1"),
+    AccentPalette("Violet",     "#A78BFA", "#8B5CF6", "#7C3AED"),
+    AccentPalette("Emerald",    "#34D399", "#10B981", "#059669"),
 )
 
 

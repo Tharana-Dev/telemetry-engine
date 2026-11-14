@@ -11,9 +11,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from personalization import current_accent, monogram_for
-from system_probe import DeviceType, SystemProfile
-from theme import StyleSheets, ThemeColors, ThemeFonts
+from ui.personalization import current_accent, monogram_for
+from ui.system_probe import DeviceType, SystemProfile
+from ui.theme import StyleSheets, ThemeColors, ThemeFonts
 
 _LAPTOP_SVG = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
