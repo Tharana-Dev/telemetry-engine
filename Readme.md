@@ -21,6 +21,12 @@ The project features two frontends:
 | `v1.1.x` | **UI Architecture** | **Complete PySide6 GUI overhaul. 7 functional pages, LiveGraphs, StatCards, dynamic accent theming, and Dual-Timer data fetching.** |
 
 ---
+## 🖥️ Platform Support
+
+- **Backend Engine (`engine/`)**: Fully cross-platform. Supports deep hardware extraction on both **Windows** (via `psutil`, `wmi`, `winreg`, `WinTmp`) and **Linux** (via direct `/proc` and `/sys` kernel hooking).
+- **CLI (`cli/`)**: Fully cross-platform. Runs natively on Windows, Linux, and macOS.
+- **GUI (`ui/`)**: Currently optimized for **Windows** (Windows 10/11). While the PySide6 frontend is technically cross-platform, the current hardware fallbacks, Admin elevation manifest (`.exe`), and sensor error handling (WinTmp/WMI) are specifically designed for the Windows ecosystem. Linux/macOS GUI support is planned for a future release.
+---
 
 ## 🔥 Key Features
 
