@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject, Signal
 import platform
 from engine.logger import logger
 
-@dataclass
+@dataclass(frozen=True)
 class CpuWorkerSnapshot:
     cpu_name: str | None = None
     cpu_usage_pct: float | None = None

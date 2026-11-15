@@ -12,12 +12,9 @@ _SVGS = {
     "cpu": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>',
     "memory": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h20v8H2z"/><path d="M6 16v4M10 16v4M14 16v4M18 16v4"/><path d="M6 4v4M10 4v4M14 4v4M18 4v4"/></svg>',
     "gpu": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="7" cy="12" r="3"/><circle cx="7" cy="12" r="1"/><path d="M12 10h6M12 14h6"/></svg>',
-    "thermals": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>',
     "disk": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M2 10h20"/><path d="M6 6h.01M6 14h.01"/></svg>',
     "network": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><path d="M5 16v-3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3"/><path d="M12 8V2"/></svg>',
-    "battery": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11v2"/><path d="M6 11v2"/></svg>'
 }
-
 
 class _SidebarButton(QPushButton):
     def __init__(self, page_id: str, tooltip: str, parent: QWidget | None = None) -> None:
@@ -106,10 +103,8 @@ class Sidebar(QWidget):
             ("cpu", "CPU"),
             ("memory", "Memory"),
             ("gpu", "GPU"),
-            ("thermals", "Thermals"),
             ("disk", "Disk"),
             ("network", "Network"),
-            ("battery", "Battery")
         ]
 
         self._nav_buttons = {}

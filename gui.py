@@ -15,6 +15,7 @@ from ui.system_probe import GetData
 from ui.theme import StyleSheets, ThemeColors, ThemeFonts
 from ui.pages.dashboard_page import DashboardPage
 from ui.pages.cpu_page import CpuPage
+from ui.pages.memory_page import MemoryPage
 
 class PlaceholderPage(QWidget):
     """Temporary page for the sectors we haven't built yet."""
@@ -83,8 +84,11 @@ class WelcomeWindow(QMainWindow):
         self.cpu_page = CpuPage(self)
         self.page_indices["cpu"] = self.page_stack.addWidget(self.cpu_page)
 
+        self.memory_page = MemoryPage(self)
+        self.page_indices["memory"] = self.page_stack.addWidget(self.memory_page)
+
         # Build placeholders for the rest
-        placeholder_ids = ["memory", "gpu", "thermals", "disk", "network", "battery"]
+        placeholder_ids = ["gpu", "disk", "network"]
         for page_id in placeholder_ids:
             placeholder = PlaceholderPage(page_id.upper(), self)
             self.page_indices[page_id] = self.page_stack.addWidget(placeholder)
@@ -116,6 +120,8 @@ class WelcomeWindow(QMainWindow):
             self.dashboard_page.refresh_accent()
         if hasattr(self, 'cpu_page'):
             self.cpu_page.refresh_accent()
+        if hasattr(self, 'memory_page'):
+            self.memory_page.refresh_accent()
 
     def _restart_as_admin(self) -> None:
         if sys.platform != "win32":
@@ -143,6 +149,8 @@ class WelcomeWindow(QMainWindow):
                 self.dashboard_page.worker._stop_event.set()
             if hasattr(self.dashboard_page, 'thread') and self.dashboard_page.thread.isRunning():
                 self.dashboard_page.thread.wait(2000)
+            if hasattr(self.memory_page, 'thread') and self.memory_page.thread.isRunning():
+                self.memory_page.thread.wait(2000)
                 
         super().closeEvent(event)
 

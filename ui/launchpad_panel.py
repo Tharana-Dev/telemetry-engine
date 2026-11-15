@@ -1,7 +1,7 @@
-import math
 from datetime import datetime
+import math
 
-from PySide6.QtCore import QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal, QTimer, QRectF  # <-- FIXED: Added QRectF
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame,
@@ -22,12 +22,11 @@ class AmbientWaveWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.time = 0.0
-        self.setMinimumHeight(120)
-        self.setMaximumHeight(160)
+        self.setFixedHeight(80)
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
-        self.timer.start(30) # ~33 FPS for smooth animation
+        self.timer.start(30)
 
     def _tick(self):
         self.time += 0.08
@@ -47,30 +46,24 @@ class AmbientWaveWidget(QWidget):
         spacing = 4
         
         for i in range(num_bars):
-            # Combine two sine waves for a complex, organic "breathing" motion
             val1 = math.sin(self.time + i * 0.3)
             val2 = math.sin(self.time * 0.6 + i * 0.15)
-            
-            # Normalize the value between 0.1 and 1.0 so bars don't disappear
             normalized = (val1 + val2 + 2) / 4
             bar_height = height * (0.15 + (normalized * 0.85))
             
             x = i * bar_width + spacing / 2
             y = height - bar_height
             
-            # Fade the edges of the wave
             edge_dist = abs((num_bars / 2) - i) / (num_bars / 2)
             alpha = int(255 * (1 - edge_dist ** 2))
             
             painter.setBrush(QColor(accent.red(), accent.green(), accent.blue(), alpha))
-            
-            # Draw the vertical bar
             rect = QRectF(x, y, bar_width - spacing, bar_height)
             painter.drawRoundedRect(rect, 3, 3)
 
 
 class LaunchpadPanel(QWidget):
-    """Right-hand launchpad showing WinTmp admin status and the HUD."""
+    """Right-hand launchpad showing WinTmp admin status and App Guide."""
 
     start_requested = Signal(str, bool)
     restart_admin_requested = Signal()
@@ -174,72 +167,74 @@ class LaunchpadPanel(QWidget):
         """)
         
         hero_layout = QVBoxLayout(hero_box)
-        hero_layout.setContentsMargins(24, 24, 24, 24)
-        hero_layout.setSpacing(4)
-        hero_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hero_layout.setContentsMargins(32, 24, 32, 24)
+        hero_layout.setSpacing(12)
 
-        # 1. Massive Clock
-        self._clock_lbl = QLabel("00:00:00", hero_box)
-        self._clock_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # 2. The Date
-        self._date_lbl = QLabel("SYSTEM DATE", hero_box)
-        self._date_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._date_lbl.setStyleSheet(f"""
-            color: {ThemeColors.TEXT_SECONDARY};
-            font-family: {ThemeFonts.FAMILY_UI};
-            font-size: {ThemeFonts.SIZE_BODY}px;
-            font-weight: 600;
+        # Title
+        title = QLabel("ABOUT & SYSTEM GUIDE", hero_box)
+        title.setStyleSheet(f"""
+            color: {current_accent().primary};
+            font-family: {ThemeFonts.FAMILY_MONO};
+            font-size: 18px;
+            font-weight: 900;
             letter-spacing: 2px;
             border: none;
         """)
+        self._about_title = title
+        hero_layout.addWidget(title)
 
-        # 3. Status Label
-        self._status_lbl = QLabel("● SYSTEM ONLINE", hero_box)
-        self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._status_lbl.setStyleSheet(f"""
-            color: {ThemeColors.STATUS_OK};
-            font-family: {ThemeFonts.FAMILY_MONO};
-            font-size: {ThemeFonts.SIZE_CAPTION}px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            margin-top: 4px;
-            border: none;
-        """)
+        # Guide Text Blocks
+        def create_guide_block(heading: str, text: str) -> QWidget:
+            w = QWidget(hero_box)
+            w.setStyleSheet("border: none; background: transparent;")
+            l = QVBoxLayout(w)
+            l.setContentsMargins(0, 8, 0, 8)
+            l.setSpacing(4)
+            
+            h = QLabel(heading, w)
+            h.setStyleSheet(f"color: {ThemeColors.TEXT_PRIMARY}; font-size: 14px; font-weight: 700; border: none;")
+            t = QLabel(text, w)
+            t.setWordWrap(True)
+            t.setStyleSheet(f"color: {ThemeColors.TEXT_SECONDARY}; font-size: 13px; line-height: 1.4; border: none;")
+            
+            l.addWidget(h)
+            l.addWidget(t)
+            return w
 
-        hero_layout.addWidget(self._clock_lbl)
-        hero_layout.addWidget(self._date_lbl)
-        hero_layout.addWidget(self._status_lbl)
-        
-        hero_layout.addSpacing(16)
+        hero_layout.addWidget(create_guide_block(
+            "1. What is Telemetry Mission Control?",
+            "A high-performance system monitor built with PySide6 and psutil. "
+            "It provides live, hardware-level telemetry with a dynamic, customizable UI."
+        ))
 
-        # 4. The Ambient Wave
+        hero_layout.addWidget(create_guide_block(
+            "2. How to read the Graphs",
+            "Graphs display data over the last 60 seconds. The X-Axis shows negative time "
+            "(e.g., -30s means '30 seconds ago'). 0s represents real-time 'Right Now'."
+        ))
+
+        hero_layout.addWidget(create_guide_block(
+            "3. What does '--' mean?",
+            "If a metric shows '--', it means the sensor is unavailable. This happens if "
+            "the app lacks Administrator privileges, or the hardware driver does not support it."
+        ))
+
+        hero_layout.addStretch()
+
         self._wave = AmbientWaveWidget(hero_box)
         hero_layout.addWidget(self._wave)
         
         parent_layout.addWidget(hero_box)
-
-        # 5. Start the clock
-        self._clock_timer = QTimer(self)
-        self._clock_timer.timeout.connect(self._update_clock)
-        self._clock_timer.start(1000) 
-        self._update_clock() 
-        
         self.refresh_accent()
 
-    def _update_clock(self) -> None:
-        now = datetime.now()
-        self._clock_lbl.setText(now.strftime("%H:%M:%S"))
-        self._date_lbl.setText(now.strftime("%A, %b %d %Y").upper())
-
     def refresh_accent(self) -> None:
-        """Updates the clock and wave colors when accent changes."""
-        if hasattr(self, "_clock_lbl"):
-            self._clock_lbl.setStyleSheet(f"""
+        if hasattr(self, "_about_title"):
+            self._about_title.setStyleSheet(f"""
                 color: {current_accent().primary};
                 font-family: {ThemeFonts.FAMILY_MONO};
-                font-size: 72px;
+                font-size: 18px;
                 font-weight: 900;
+                letter-spacing: 2px;
                 border: none;
             """)
         if hasattr(self, "_wave"):
