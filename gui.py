@@ -17,6 +17,7 @@ from ui.pages.dashboard_page import DashboardPage
 from ui.pages.cpu_page import CpuPage
 from ui.pages.memory_page import MemoryPage
 from ui.pages.network_page import NetworkPage
+from ui.pages.disk_page import DiskPage
 
 class PlaceholderPage(QWidget):
     """Temporary page for the sectors we haven't built yet."""
@@ -91,8 +92,11 @@ class WelcomeWindow(QMainWindow):
         self.network_page = NetworkPage(self)
         self.page_indices["network"] = self.page_stack.addWidget(self.network_page)
 
+        self.disk_page = DiskPage(self)
+        self.page_indices["disk"] = self.page_stack.addWidget(self.disk_page)
+
         # Build placeholders for the rest
-        placeholder_ids = ["gpu", "disk"]
+        placeholder_ids = ["gpu"]
         for page_id in placeholder_ids:
             placeholder = PlaceholderPage(page_id.upper(), self)
             self.page_indices[page_id] = self.page_stack.addWidget(placeholder)
@@ -128,6 +132,10 @@ class WelcomeWindow(QMainWindow):
             self.memory_page.refresh_accent()
         if hasattr(self, 'network_page'):
             self.network_page.refresh_accent()
+        if hasattr(self, 'disk_page'):
+            self.disk_page.refresh_accent()
+
+
 
     def _restart_as_admin(self) -> None:
         if sys.platform != "win32":
@@ -148,7 +156,7 @@ class WelcomeWindow(QMainWindow):
 
 def closeEvent(self, event):
     """Safely shut down background threads and timers before the window closes."""
-    page_names = ['dashboard_page', 'cpu_page', 'memory_page', 'network_page']
+    page_names = ['dashboard_page', 'cpu_page', 'memory_page', 'network_page','disk_page']
     
     for name in page_names:
         page = getattr(self, name, None)
