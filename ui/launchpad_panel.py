@@ -1,7 +1,7 @@
 from datetime import datetime
 import math
 
-from PySide6.QtCore import Qt, Signal, QTimer, QRectF  # <-- FIXED: Added QRectF
+from PySide6.QtCore import Qt, Signal, QTimer, QRectF
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame,
@@ -22,7 +22,7 @@ class AmbientWaveWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.time = 0.0
-        self.setFixedHeight(80)
+        self.setFixedHeight(60) # Slightly smaller to make room for text
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -168,7 +168,7 @@ class LaunchpadPanel(QWidget):
         
         hero_layout = QVBoxLayout(hero_box)
         hero_layout.setContentsMargins(32, 24, 32, 24)
-        hero_layout.setSpacing(12)
+        hero_layout.setSpacing(8)
 
         # Title
         title = QLabel("ABOUT & SYSTEM GUIDE", hero_box)
@@ -183,44 +183,66 @@ class LaunchpadPanel(QWidget):
         self._about_title = title
         hero_layout.addWidget(title)
 
-        # Guide Text Blocks
-        def create_guide_block(heading: str, text: str) -> QWidget:
+        # Helper to create a section block
+        def create_section(heading: str, body_html: str) -> QWidget:
             w = QWidget(hero_box)
             w.setStyleSheet("border: none; background: transparent;")
             l = QVBoxLayout(w)
-            l.setContentsMargins(0, 8, 0, 8)
-            l.setSpacing(4)
+            l.setContentsMargins(0, 6, 0, 6)
+            l.setSpacing(2)
             
             h = QLabel(heading, w)
-            h.setStyleSheet(f"color: {ThemeColors.TEXT_PRIMARY}; font-size: 14px; font-weight: 700; border: none;")
-            t = QLabel(text, w)
+            h.setStyleSheet(f"color: {ThemeColors.TEXT_PRIMARY}; font-size: 13px; font-weight: 700; border: none;")
+            
+            t = QLabel(body_html, w)
             t.setWordWrap(True)
-            t.setStyleSheet(f"color: {ThemeColors.TEXT_SECONDARY}; font-size: 13px; line-height: 1.4; border: none;")
+            t.setOpenExternalLinks(True) # Makes links clickable
+            t.setStyleSheet(f"color: {ThemeColors.TEXT_SECONDARY}; font-size: 12px; line-height: 1.4; border: none;")
             
             l.addWidget(h)
             l.addWidget(t)
             return w
 
-        hero_layout.addWidget(create_guide_block(
-            "1. What is Telemetry Mission Control?",
-            "A high-performance system monitor built with PySide6 and psutil. "
-            "It provides live, hardware-level telemetry with a dynamic, customizable UI."
-        ))
-
-        hero_layout.addWidget(create_guide_block(
-            "2. How to read the Graphs",
+        # 1. How to read the Graphs
+        hero_layout.addWidget(create_section(
+            "📊 How to read the Graphs",
             "Graphs display data over the last 60 seconds. The X-Axis shows negative time "
             "(e.g., -30s means '30 seconds ago'). 0s represents real-time 'Right Now'."
         ))
 
-        hero_layout.addWidget(create_guide_block(
-            "3. What does '--' mean?",
-            "If a metric shows '--', it means the sensor is unavailable. This happens if "
-            "the app lacks Administrator privileges, or the hardware driver does not support it."
+        # 2. What does '--' mean?
+        hero_layout.addWidget(create_section(
+            "❓ What does '--' mean?",
+            "If a metric shows '--', the sensor is unavailable. This usually happens if the app "
+            "lacks <b>Administrator privileges</b>, or the hardware driver does not support it."
+        ))
+
+        # 3. Known Limitations
+        hero_layout.addWidget(create_section(
+            "⚠️ Known Limitations",
+            "• <b>CPU Temps</b>: Windows blocks raw MSR reads without Admin rights (WinTmp).<br>"
+            "• <b>GPU Utilization</b>: NVIDIA Optimus may route workloads to the iGPU, showing 0% on the dGPU.<br>"
+            "• <b>Fan Speeds</b>: Most laptops control fans via the EC, which is often hidden from software."
+        ))
+
+        # 4. Upcoming Versions
+        hero_layout.addWidget(create_section(
+            "🚀 Upcoming Versions (Roadmap)",
+            "• <b>v1.2.x</b>: Process Explorer & Custom Alerts<br>"
+            "• <b>v1.3.x</b>: Historical Data Logging (SQLite) & Plugin System"
+        ))
+
+        # 5. Developer Links
+        hero_layout.addWidget(create_section(
+            "👨‍💻 Developer",
+            f"Created by <b>Tharana Nimsara</b><br>"
+            f"<a href='https://github.com/Tharana-dev' style='color: {current_accent().primary};'>GitHub</a> &nbsp;|&nbsp; "
+            f"<a href='https://tharana-dev.vercel.app/' style='color: {current_accent().primary};'>Website</a>"
         ))
 
         hero_layout.addStretch()
 
+        # 6. The Ambient Wave Footer
         self._wave = AmbientWaveWidget(hero_box)
         hero_layout.addWidget(self._wave)
         
@@ -228,6 +250,7 @@ class LaunchpadPanel(QWidget):
         self.refresh_accent()
 
     def refresh_accent(self) -> None:
+        """Called by WelcomeWindow when the user picks a new accent swatch."""
         if hasattr(self, "_about_title"):
             self._about_title.setStyleSheet(f"""
                 color: {current_accent().primary};
@@ -241,6 +264,7 @@ class LaunchpadPanel(QWidget):
             self._wave.update()
 
     def update_profile(self, profile: SystemProfile) -> None:
+        """Updates greeting and WinTmp admin banner."""
         device_word = profile.device_type.label.split()[0].lower()
         if device_word == "unknown":
             device_word = "system"
