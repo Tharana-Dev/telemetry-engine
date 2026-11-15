@@ -65,10 +65,8 @@ class GpuPage(QWidget):
             # Create a card for each GPU
             for idx, gpu in enumerate(snapshot.gpus):
                 name = gpu.name or f"GPU {idx}"
-                short_name = name if len(name) < 20 else name[:17] + "..."
                 
-                # Notice: We keep the rows, but the UI will show "--" if data is None
-                card = StatCard(f"dGPU {idx}: {short_name}", ["Temp", "Utilization", "Power", "Fan Speed"])
+                card = StatCard(f"dGPU {idx}: {name}", ["Temp", "Utilization", "Power", "Fan Speed"])
                 self._cards_layout.addWidget(card, 0, idx)
                 self._gpu_cards[gpu.index] = card
             

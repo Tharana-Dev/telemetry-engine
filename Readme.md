@@ -18,7 +18,7 @@ The project features two frontends:
 | `v0.5.x` | Unified Architecture | Replaced custom Enums with standard exceptions. Centralized error boundary. Rotating file logger. |
 | `v0.9.x` | CLI & Threading | `rich.live` dashboard, dynamic progress bars, Producer/Consumer threading. |
 | `v1.0.x` | Universal Engine | Complete Windows support via `psutil`, `wmi`, `winreg`, and `WinTmp`. Graceful privilege degradation. |
-| `v1.1.x` | **UI Architecture** | PySide6 GUI overhaul. Extracted reusable `LiveGraph` and `StatCard` widgets. Dual-timer data fetching. Dynamic accent theming. |
+| `v1.1.x` | **UI Architecture** | **Complete PySide6 GUI overhaul. 7 functional pages, LiveGraphs, StatCards, dynamic accent theming, and Dual-Timer data fetching.** |
 
 ---
 
@@ -33,10 +33,11 @@ The project features two frontends:
 
 ### User Interface (GUI)
 - **Dual-Timer Decoupling:** The UI uses two independent timers. A 30ms timer renders graphs at 60FPS, while a 1000ms timer updates the text `StatCards` exactly once per second, preventing flickering and saving CPU cycles.
-- **Reusable Component Library:** Extracted `LiveGraph` (PyQtGraph) and `StatCard` widgets, allowing rapid development of new hardware pages without duplicating QSS or layout code.
+- **Reusable Component Library:** Extracted `LiveGraph` (PyQtGraph) and `StatCard`/`DashboardCard` widgets, allowing rapid development of new hardware pages without duplicating QSS or layout code.
 - **Dynamic Theming Engine:** A singleton `Personalization` module broadcasts signals when the user changes the accent color. Every SVG, graph pen, and text highlight repaints instantly.
+- **Dynamic Multi-GPU Support:** The GPU page automatically detects and generates cards for every available NVIDIA GPU (or falls back to the iGPU if no dGPU is present).
 - **Zero-Garbage-Collection Crashes:** Graph widgets are bound to class scope (rather than factory functions) to prevent PySide6 C++ memory pointers from being prematurely destroyed.
-- **Thread-Safe Data Pipeline:** Background workers poll hardware at 10Hz, pushing data into a thread-safe `deque`. The UI thread safely drains the queue without blocking the event loop.
+- **Thread-Safe Data Pipeline:** Background `QThread` workers poll hardware at 10Hz, pushing data into a thread-safe `deque`. The UI thread safely drains the queue without blocking the event loop.
 
 ---
 
@@ -46,8 +47,7 @@ The project features two frontends:
   - **Admin Required:** Windows blocks raw CPU MSR reads. `WinTmp` requires the terminal to be run as Administrator to read CPU temps. Without it, CPU Temp shows `--` (the UI explicitly shows "Admin Required").
   - **Core Isolation:** Windows Defender's Memory Integrity can block `WinTmp` from reading sensors entirely, even as Admin. The engine will safely fall back to WMI or `N/A`.
   - **Antivirus Flags:** `WinTmp` uses the `WinRing0` driver, which Windows Defender often flags as a vulnerable driver (CVE-2020-14979). For development, a folder exclusion is required.
-- **WSL (Windows Subsystem for Linux) Restrictions:**
-  - **PCIe Hot-Plug:** WSL cannot hot-plug a GPU. If WSL boots while the dGPU is powered off (e.g., ASUS Eco Mode), `nvmlInit()` will fail until WSL is fully restarted.
+- **NVIDIA Optimus Routing:** On hybrid laptops (e.g., ASUS TUF), Windows silently routes standard OpenGL/DirectX workloads to the iGPU to save battery. This causes the dGPU utilization to show `0%` in the app. Users must force the dGPU via Windows Graphics Settings for specific `.exe` files.
 - **Laptop Fan Speeds:** On almost all laptops, physical fans are controlled by the motherboard's Embedded Controller (EC). `pynvml` will correctly return `N/A` for laptop dGPU fans.
 - **Disk Space Scope:** The engine only monitors the primary root partition (`/` on Linux, `C:\` on Windows).
 
@@ -78,13 +78,13 @@ telemetry-engine/
 │       ├── universal_disk.py
 │       └── universal_network.py
 ├── ui/                        # PySide6 GUI Application (Phase 2)
-│   ├── data/                  # Background QThread workers (CPU, Mem, Net)
-│   ├── pages/                 # UI Pages (Dashboard, CPU, Memory, Network)
-│   ├── widgets/               # Reusable components (LiveGraph, StatCard)
+│   ├── data/                  # Background QThread workers (CPU, Mem, Net, Disk, GPU)
+│   ├── pages/                 # UI Pages (Dashboard, CPU, Memory, GPU, Disk, Network)
+│   ├── widgets/               # Reusable components (LiveGraph, StatCard, DashboardCard)
 │   ├── theme.py               # Global QSS stylesheets and color palettes
 │   ├── personalization.py     # Accent color singleton and monogram logic
 │   ├── sidebar.py             # Navigation bar and accent swatches
-│   ├── launchpad_panel.py     # Home page guide and admin status
+│   ├── launchpad_panel.py     # Home page guide, roadmap, and admin status
 │   └── identity_panel.py      # Home page hardware specs card
 ├── tests/                     # 205+ Pytest unit tests
 ├── app.manifest               # UAC Admin elevation for Nuitka compilation
@@ -99,13 +99,14 @@ telemetry-engine/
 
 ## 🖥️ Expected Output (GUI Architecture)
 
-The GUI features a persistent left sidebar for navigation and dynamic accent colors. The pages are structured as follows:
-
-*   **Home**: User greeting, WinTmp Admin status, hardware specs, and an interactive "About & System Guide" explaining how to read the graphs.
-*   **Dashboard**: A 3x2 grid of `StatCard`s showing live CPU, Memory, GPU, Battery, Disk, and Network telemetry.
+The GUI features a persistent left sidebar for navigation, dynamic accent colors, and 7 fully functional pages:
+*   **Home**: User greeting, WinTmp Admin status, hardware specs, an interactive "About & System Guide" (explaining graphs, `--` values, and limitations), a roadmap, and developer links.
+*   **Dashboard**: A 3x2 grid of `DashboardCard`s showing live CPU, Memory, GPU, Battery, Disk, and Network telemetry, featuring word-wrap for long hardware names.
 *   **CPU**: Two 60FPS `LiveGraph`s (Utilization & Frequency) and two `StatCard`s (Processor Info & Live Metrics with Max Temp tracking).
 *   **Memory**: Two `LiveGraph`s (Utilization & Allocation) and two `StatCard`s (Overview & Details).
-*   **Network**: Two `LiveGraph`s (Download & Upload speed) with dynamic Y-axis scaling, and three `StatCard`s (Connection, Live Traffic, Link Quality).
+*   **GPU**: Two 60FPS `LiveGraph`s (Temperature & Utilization) and dynamic multi-GPU `StatCard`s.
+*   **Disk**: Two 60FPS `LiveGraph`s (Read & Write speeds) and two `StatCard`s (Storage Space & Live I/O).
+*   **Network**: Two 60FPS `LiveGraph`s (Download & Upload speed) with dynamic Y-axis scaling, and three `StatCard`s (Connection, Live Traffic, Link Quality).
 
 ---
 
@@ -171,3 +172,12 @@ pytest -v
 | **Thermal** | **~1585 ms** | **~3.6 ms** | WinTmp cold start. Cached by the background thread. |
 
 *(Note: The 3.8ms target was for synchronous execution. Because hardware polling runs in isolated background `QThreads` in the GUI, latencies up to 500ms have zero impact on UI frame rate).*
+
+---
+
+## 👨‍💻 Developer
+
+Created by **Tharana Nimsara**
+
+- **GitHub**: [https://github.com/Tharana-dev](https://github.com/Tharana-dev)
+- **Website**: [https://tharana-dev.vercel.app/](https://tharana-dev.vercel.app/)
