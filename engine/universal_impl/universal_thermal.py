@@ -1,4 +1,5 @@
 import ctypes
+import time  # <-- ADDED: Needed for the rate limiter
 from engine.logger import logger
 from engine.models import ThermalSnapshot, GpuInfo
 import pynvml
@@ -26,12 +27,18 @@ class UniversalThermalSampler:
     def __init__(self):
         self._admin = is_admin()
         self._wintmp_available = False
+        self._wintmp_error = None
         
         self._cpu_name = None
         self._cpu_speed_mhz = None
         self._board_vendor = None
         self._igpu_name = None
         self._cpu_vendor = "Unknown"
+
+        # --- NVML Error Caching ---
+        self._last_nvml_error_msg = None
+        self._last_nvml_log_time = 0.0
+        # --------------------------
 
         if HAS_WINREG:
             try:
@@ -71,7 +78,8 @@ class UniversalThermalSampler:
                 self._wintmp = WinTmp
                 self._wintmp_available = True
             except Exception as e:
-                logger.error(f"WinTmp failed to load: {e}")
+                self._wintmp_error = f"WinTmp failed to load: {e}"
+                logger.error(self._wintmp_error)
         else:
             logger.warning("App started without Administrator privileges. CPU temperatures will be unavailable.")
             
@@ -92,21 +100,32 @@ class UniversalThermalSampler:
             except Exception:
                 pass
 
+    def _log_nvml_error(self, msg: str):
+        """Only logs NVML errors if the message changes or 60s have passed."""
+        current_time = time.time()
+        if msg != self._last_nvml_error_msg or (current_time - self._last_nvml_log_time > 60):
+            logger.error(msg)
+            self._last_nvml_error_msg = msg
+            self._last_nvml_log_time = current_time
+
     def _get_nvidia(self) -> list[GpuInfo]:
         if not self.initialized:
             try:
                 pynvml.nvmlInit()
                 self.initialized = True
+                self._last_nvml_error_msg = None # Clear error on success
             except Exception as e:
-                logger.error(f"NVML init failed: {e}")
+                self._log_nvml_error(f"NVML init failed: {e}")
                 return []
 
         try:
             count = pynvml.nvmlDeviceGetCount()
+            self._last_nvml_error_msg = None # Clear error on success
         except pynvml.NVMLError as e:
-            logger.error(f"NVML driver lost. Attempting to reset: {e}")
+            self._log_nvml_error(f"NVML driver lost. Attempting to reset: {e}")
             self.initialized = False 
             return []
+            
         if count == 0:
             return []
 
@@ -127,7 +146,6 @@ class UniversalThermalSampler:
                 try:
                     power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
                     power_watts = round(power_mw / 1000, 2)
-                    # Add sanity check:
                     if power_watts > 250.0:
                         power_watts = None
                 except pynvml.NVMLError:
@@ -162,14 +180,12 @@ class UniversalThermalSampler:
             sensor_error = self._wintmp_error or "WinTmp unavailable"
 
         # --- 2. Fallback to WMI (ACPI Thermal Zone) ---
-        # If WinTmp failed or returned None, try WMI
         if cpu_temp is None and HAS_WMI:
             try:
                 w = wmi.WMI(namespace="root\\wmi")
-                # WMI returns temperature in tenths of a degree Kelvin
                 temp_kelvin = w.MSAcpi_ThermalZoneTemperature()[0].CurrentTemperature
                 cpu_temp = round((temp_kelvin / 10.0) - 273.15, 1)
-                sensor_error = None # Clear the error because WMI succeeded!
+                sensor_error = None 
             except Exception as e:
                 if not sensor_error:
                     sensor_error = f"WMI Temp failed: {e}"

@@ -4,6 +4,7 @@ from collections import deque
 from dataclasses import dataclass
 from PySide6.QtCore import QObject, Signal
 import platform
+
 from engine.logger import logger
 
 @dataclass(frozen=True)
@@ -11,17 +12,25 @@ class DashboardSnapshot:
     cpu_name: str | None = None
     cpu_usage_pct: float | None = None
     cpu_freq_mhz: int | None = None
+    board_vendor: str | None = None
+
     ram_total_gb: float | None = None
     ram_used_gb: float | None = None
     ram_used_pct: float | None = None
+    
     igpu_name: str | None = None
     dgpu_name: str | None = None
+    
     battery_capacity: int | None = None
     battery_status: str | None = None
+    battery_online: bool | None = None
+    battery_health: float | None = None
+    
     disk_read_bps: float | None = None
     disk_write_bps: float | None = None
     disk_space_used_pct: float | None = None
     disk_space_free_gb: float | None = None
+    
     net_status: str | None = None
     net_download_bps: float | None = None
     net_upload_bps: float | None = None
@@ -76,35 +85,35 @@ class DashboardDataCollector(QObject):
             cpu_name = thermal.cpu_name if thermal else None
             cpu_usage = cpu.usage_pct if cpu else None
             cpu_freq = cpu.current_freq_mhz if cpu else None
+            board_vendor = thermal.board_vendor if thermal else None
+            
             ram_total = mem.total_gb if mem else None
             ram_used = mem.used_gb if mem else None
             ram_pct = mem.used_pct if mem else None
             igpu = thermal.igpu_name if thermal else None
             dgpu = thermal.gpus[0].name if thermal and thermal.gpus else None
+            
+            # Battery Info
             batt_cap = battery.capacity if battery else None
             batt_status = battery.status if battery else None
+            batt_online = battery.online if battery else None
+            batt_health = battery.health_percent if battery else None
             
             # Disk I/O (Sum all disks to get total system I/O)
             d_read = 0.0
             d_write = 0.0
             if disk_io_list:
                 for d in disk_io_list:
-                    if d.read_bps:
-                        d_read += d.read_bps
-                    if d.write_bps:
-                        d_write += d.write_bps
+                    if d.read_bps: d_read += d.read_bps
+                    if d.write_bps: d_write += d.write_bps
                 
             # Disk Space
             d_used_pct = disk_space.percent if disk_space else None
             d_free_gb = (disk_space.free_bytes / (1024**3)) if disk_space and disk_space.free_bytes else None
             
             # Network (Find the active connection with the most traffic)
-            n_status = None
-            n_down = None
-            n_up = None
+            n_status, n_down, n_up = None, None, None
             if net_list:
-                # Look for the interface with the highest traffic. 
-                # This will naturally skip disconnected adapters (which have 0 traffic).
                 active_net = max(net_list, key=lambda x: (x.download_bps or 0) + (x.upload_bps or 0))
                 n_status = active_net.status
                 n_down = active_net.download_bps
@@ -112,9 +121,11 @@ class DashboardDataCollector(QObject):
 
             dashboard = DashboardSnapshot(
                 cpu_name=cpu_name, cpu_usage_pct=cpu_usage, cpu_freq_mhz=cpu_freq,
+                board_vendor=board_vendor,
                 ram_total_gb=ram_total, ram_used_gb=ram_used, ram_used_pct=ram_pct,
                 igpu_name=igpu, dgpu_name=dgpu,
                 battery_capacity=batt_cap, battery_status=batt_status,
+                battery_online=batt_online, battery_health=batt_health,
                 disk_read_bps=d_read, disk_write_bps=d_write, 
                 disk_space_used_pct=d_used_pct, disk_space_free_gb=d_free_gb,
                 net_status=n_status, net_download_bps=n_down, net_upload_bps=n_up

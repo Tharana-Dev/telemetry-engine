@@ -1,4 +1,4 @@
-from PySide6.QtCore import QThread, QTimer
+from PySide6.QtCore import QThread, QTimer, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QGridLayout, QWidget, QVBoxLayout
 
@@ -26,16 +26,15 @@ class DashboardPage(QWidget):
         main_layout.addLayout(self.grid)
         main_layout.addStretch()
 
-        # 4. Setup Worker Thread (Do not start it yet)
+        # 4. Setup Worker Thread
         self.thread = QThread()
         self.worker = DashboardDataCollector()
         self.worker.moveToThread(self.thread)
         
-        # Connect signals
         self.thread.started.connect(self.worker.work)
         self.worker.finished.connect(self.thread.quit)
 
-        # 5. Setup UI Timer (Do not start it yet)
+        # 5. Setup UI Timer
         self.ui_timer = QTimer(self)
         self.ui_timer.timeout.connect(self.poll_worker_data)
 
@@ -43,10 +42,10 @@ class DashboardPage(QWidget):
         columns = 3 
 
         card_configs = [
-            ("CPU", ["Usage", "Speed"]),
+            ("CPU", ["Usage", "Speed", "Board"]),
             ("Memory", ["Used", "Total"]),
             ("GPU", ["iGPU", "dGPU"]),
-            ("Battery", ["Capacity", "Status"]),
+            ("Battery", ["Capacity", "Status", "Health", "Plugged In"]),
             ("Disk", ["Read", "Write", "Space"]),
             ("Network", ["Download", "Upload"]),
         ]
@@ -59,38 +58,31 @@ class DashboardPage(QWidget):
             self.cards[title] = card
             self.grid.addWidget(card, row, col)
 
-        # Make all columns stretch evenly to fill the width
+        # Make all columns stretch evenly
         for i in range(columns):
             self.grid.setColumnStretch(i, 1)
 
     # ------------------------------------------------------------------
-    # PAGE LIFECYCLE (Gather only when the page is visible)
+    # PAGE LIFECYCLE
     # ------------------------------------------------------------------
 
     def showEvent(self, event):
-        """Fires when the user navigates to the Dashboard tab."""
         super().showEvent(event)
         if not self.thread.isRunning():
-            print("DEBUG: Dashboard shown. Resuming data collection...")
-            self.worker._stop_event.clear() # Reset the stop flag!
+            self.worker._stop_event.clear()
             self.thread.start()
-            self.ui_timer.start(1000) # Update UI exactly once per second
+            self.ui_timer.start(1000)
 
     def hideEvent(self, event):
-        """Fires when the user navigates away from the Dashboard tab."""
         super().hideEvent(event)
-        print("DEBUG: Dashboard hidden. Pausing data collection...")
         self.ui_timer.stop()
-        
         if hasattr(self, 'worker') and self.worker:
             self.worker._stop_event.set()
-            
         if hasattr(self, 'thread') and self.thread.isRunning():
             self.thread.quit()
-            self.thread.wait() # Wait for thread to safely exit
+            self.thread.wait()
 
     def closeEvent(self, event: QCloseEvent):
-        """Extra safety net if the app closes while Dashboard is active."""
         self.ui_timer.stop()
         if hasattr(self, 'worker') and self.worker:
             self.worker._stop_event.set()
@@ -103,51 +95,12 @@ class DashboardPage(QWidget):
     # ------------------------------------------------------------------
 
     def poll_worker_data(self):
-        """Runs exactly every 1000ms. Drains the deque and aggregates the data."""
         pending = self.worker.drain_pending_snapshots()
-        
         if not pending:
             return
 
         latest = pending[-1]
-
-        # Calculate Average CPU to match Task Manager
-        cpu_samples = [p.cpu_usage_pct for p in pending if p.cpu_usage_pct is not None]
-        avg_cpu = sum(cpu_samples) / len(cpu_samples) if cpu_samples else None
-
-        # Use max() for bursty things like Disk and Network
-        max_ram_used = max((p.ram_used_gb for p in pending if p.ram_used_gb is not None), default=None)
-        max_d_read = max((p.disk_read_bps for p in pending if p.disk_read_bps is not None), default=None)
-        max_d_write = max((p.disk_write_bps for p in pending if p.disk_write_bps is not None), default=None)
-        max_n_down = max((p.net_download_bps for p in pending if p.net_download_bps is not None), default=None)
-        max_n_up = max((p.net_upload_bps for p in pending if p.net_upload_bps is not None), default=None)
-
-        aggregated = DashboardSnapshot(
-            cpu_name=latest.cpu_name,
-            cpu_usage_pct=avg_cpu,
-            cpu_freq_mhz=latest.cpu_freq_mhz,
-            
-            ram_total_gb=latest.ram_total_gb,
-            ram_used_gb=max_ram_used,
-            ram_used_pct=latest.ram_used_pct,
-            
-            igpu_name=latest.igpu_name,
-            dgpu_name=latest.dgpu_name,
-            
-            battery_capacity=latest.battery_capacity,
-            battery_status=latest.battery_status,
-            
-            disk_read_bps=max_d_read,
-            disk_write_bps=max_d_write,
-            disk_space_used_pct=latest.disk_space_used_pct,
-            disk_space_free_gb=latest.disk_space_free_gb,
-            
-            net_status=latest.net_status,
-            net_download_bps=max_n_down,
-            net_upload_bps=max_n_up
-        )
-
-        self.update_ui(aggregated)
+        self.update_ui(latest)
 
     def update_ui(self, snapshot: DashboardSnapshot):
         # --- CPU CARD ---
@@ -158,6 +111,14 @@ class DashboardPage(QWidget):
                 card.update_row("Usage", f"{snapshot.cpu_usage_pct:.1f}%", color)
             if snapshot.cpu_freq_mhz is not None:
                 card.update_row("Speed", f"{snapshot.cpu_freq_mhz / 1000:.2f} GHz")
+            
+            if snapshot.board_vendor:
+                board = snapshot.board_vendor if len(snapshot.board_vendor) < 25 else snapshot.board_vendor[:22] + "..."
+                card.update_row("Board", board)
+            else:
+                # Changed from "Unknown" to "Admin Required"
+                card.update_row("Board", "Admin Required", "#ffbb33")
+                
 
         # --- MEMORY CARD ---
         if "Memory" in self.cards:
@@ -176,18 +137,21 @@ class DashboardPage(QWidget):
                 card.update_row("iGPU", igpu_display)
                 card.set_row_visible("iGPU", True)
             else:
-                card.set_row_visible("iGPU", False)
+                card.update_row("iGPU", "Admin Required", "#ffbb33")
+                card.set_row_visible("iGPU", True)
 
             if snapshot.dgpu_name:
                 dgpu_display = snapshot.dgpu_name if len(snapshot.dgpu_name) < 25 else snapshot.dgpu_name[:22] + "..."
                 card.update_row("dGPU", dgpu_display, "#00ff00")
                 card.set_row_visible("dGPU", True)
             else:
-                card.set_row_visible("dGPU", False)
+                card.update_row("dGPU", "Not Detected")
+                card.set_row_visible("dGPU", True)
 
         # --- BATTERY CARD ---
         if "Battery" in self.cards:
             card = self.cards["Battery"]
+            
             if snapshot.battery_capacity is not None:
                 color = "#ff4444" if snapshot.battery_capacity < 20 else None
                 card.update_row("Capacity", f"{snapshot.battery_capacity}%", color)
@@ -198,6 +162,19 @@ class DashboardPage(QWidget):
                 card.update_row("Status", snapshot.battery_status)
             else:
                 card.update_row("Status", "No Battery")
+
+            if snapshot.battery_health is not None:
+                health_color = "#ff4444" if snapshot.battery_health < 80 else None
+                card.update_row("Health", f"{snapshot.battery_health:.0f}%", health_color)
+            else:
+                card.update_row("Health", "--")
+
+            if snapshot.battery_online is not None:
+                plugged_text = "Yes (AC)" if snapshot.battery_online else "No (Battery)"
+                plugged_color = "#00ff00" if snapshot.battery_online else "#ffbb33"
+                card.update_row("Plugged In", plugged_text, plugged_color)
+            else:
+                card.update_row("Plugged In", "--")
 
         # --- DISK CARD ---
         if "Disk" in self.cards:
@@ -233,17 +210,6 @@ class DashboardPage(QWidget):
         else:
             return f"{bytes_per_sec / (1024**3):.2f} GB/s"
 
-    def _format_size(self, bytes_total: float | None) -> str:
-        if bytes_total is None or bytes_total == 0:
-            return "0 B"
-        if bytes_total < 1024**2:
-            return f"{bytes_total / 1024:.1f} KB"
-        elif bytes_total < 1024**3:
-            return f"{bytes_total / (1024**2):.1f} MB"
-        else:
-            return f"{bytes_total / (1024**3):.1f} GB"
-
     def refresh_accent(self):
-        """Called when the user picks a new accent color from the sidebar."""
         for card in self.cards.values():
             card.refresh_accent()
