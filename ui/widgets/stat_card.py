@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QLabel, QFrame, QVBoxLayout, QHBoxLayout, QWidget, QSizePolicy
 
 from ui.theme import ThemeColors, ThemeFonts
@@ -58,9 +58,10 @@ class StatCard(QFrame):
     def __init__(self, title: str, rows: list[str], parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
         # Give cards a nice minimum height so they don't squish
-        self.setMinimumHeight(180)
+        self.setMinimumHeight(200)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         self._title = title

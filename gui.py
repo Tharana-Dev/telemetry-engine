@@ -16,6 +16,7 @@ from ui.theme import StyleSheets, ThemeColors, ThemeFonts
 from ui.pages.dashboard_page import DashboardPage
 from ui.pages.cpu_page import CpuPage
 from ui.pages.memory_page import MemoryPage
+from ui.pages.network_page import NetworkPage
 
 class PlaceholderPage(QWidget):
     """Temporary page for the sectors we haven't built yet."""
@@ -87,8 +88,11 @@ class WelcomeWindow(QMainWindow):
         self.memory_page = MemoryPage(self)
         self.page_indices["memory"] = self.page_stack.addWidget(self.memory_page)
 
+        self.network_page = NetworkPage(self)
+        self.page_indices["network"] = self.page_stack.addWidget(self.network_page)
+
         # Build placeholders for the rest
-        placeholder_ids = ["gpu", "disk", "network"]
+        placeholder_ids = ["gpu", "disk"]
         for page_id in placeholder_ids:
             placeholder = PlaceholderPage(page_id.upper(), self)
             self.page_indices[page_id] = self.page_stack.addWidget(placeholder)
@@ -122,6 +126,8 @@ class WelcomeWindow(QMainWindow):
             self.cpu_page.refresh_accent()
         if hasattr(self, 'memory_page'):
             self.memory_page.refresh_accent()
+        if hasattr(self, 'network_page'):
+            self.network_page.refresh_accent()
 
     def _restart_as_admin(self) -> None:
         if sys.platform != "win32":
@@ -140,19 +146,27 @@ class WelcomeWindow(QMainWindow):
         if result > 32:
             QApplication.quit()
 
-    def closeEvent(self, event):
-        """Safely shut down background threads before the window closes."""
-        # Tell the dashboard to stop its timer and kill its thread
-        if hasattr(self, 'dashboard_page'):
-            self.dashboard_page.ui_timer.stop()
-            if hasattr(self.dashboard_page, 'worker') and self.dashboard_page.worker:
-                self.dashboard_page.worker._stop_event.set()
-            if hasattr(self.dashboard_page, 'thread') and self.dashboard_page.thread.isRunning():
-                self.dashboard_page.thread.wait(2000)
-            if hasattr(self.memory_page, 'thread') and self.memory_page.thread.isRunning():
-                self.memory_page.thread.wait(2000)
+def closeEvent(self, event):
+    """Safely shut down background threads and timers before the window closes."""
+    page_names = ['dashboard_page', 'cpu_page', 'memory_page', 'network_page']
+    
+    for name in page_names:
+        page = getattr(self, name, None)
+        if page:
+            # Stop the UI timer if the page has one
+            if hasattr(page, 'ui_timer') and page.ui_timer:
+                page.ui_timer.stop()
+            
+            # Signal the worker thread to stop
+            if hasattr(page, 'worker') and page.worker:
+                page.worker._stop_event.set()
+            
+            # Wait for the thread to finish cleanly
+            if hasattr(page, 'thread') and page.thread and page.thread.isRunning():
+                page.thread.quit()  # Optional: ensures QThread event loop exits
+                page.thread.wait(2000)
                 
-        super().closeEvent(event)
+    super().closeEvent(event)
 
 
 if __name__ == "__main__":
