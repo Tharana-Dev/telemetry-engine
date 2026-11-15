@@ -126,6 +126,8 @@ class DiskPage(QWidget):
 
     def hideEvent(self, event):
         super().hideEvent(event)
+        if self.window().isMinimized():
+            return  # Skip shutdown - the app was just minimized
         self.graph_timer.stop()
         self.card_timer.stop()
         if hasattr(self, 'worker') and self.worker:

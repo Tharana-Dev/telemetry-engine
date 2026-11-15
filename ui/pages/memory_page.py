@@ -111,6 +111,8 @@ class MemoryPage(QWidget):
 
     def hideEvent(self, event):
         super().hideEvent(event)
+        if self.window().isMinimized():
+            return  # Skip shutdown - the app was just minimized
         self.timer.stop()
 
         if hasattr(self, 'worker') and self.worker:

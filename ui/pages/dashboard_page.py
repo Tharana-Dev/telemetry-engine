@@ -75,6 +75,8 @@ class DashboardPage(QWidget):
 
     def hideEvent(self, event):
         super().hideEvent(event)
+        if self.window().isMinimized():
+            return  # Skip shutdown - the app was just minimized
         self.ui_timer.stop()
         if hasattr(self, 'worker') and self.worker:
             self.worker._stop_event.set()

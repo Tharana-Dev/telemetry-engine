@@ -42,7 +42,7 @@ class WelcomeWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Telemetry Mission Control")
-        self.setMinimumSize(1100, 900)
+        self.setMinimumSize(1300, 900)
         self.setStyleSheet(StyleSheets.get_main_stylesheet())
 
         self.profile = GetData().collect()
@@ -154,27 +154,30 @@ class WelcomeWindow(QMainWindow):
         if result > 32:
             QApplication.quit()
 
-def closeEvent(self, event):
-    """Safely shut down background threads and timers before the window closes."""
-    page_names = ['dashboard_page', 'cpu_page', 'memory_page', 'network_page','disk_page']
-    
-    for name in page_names:
-        page = getattr(self, name, None)
-        if page:
-            # Stop the UI timer if the page has one
-            if hasattr(page, 'ui_timer') and page.ui_timer:
-                page.ui_timer.stop()
-            
-            # Signal the worker thread to stop
-            if hasattr(page, 'worker') and page.worker:
-                page.worker._stop_event.set()
-            
-            # Wait for the thread to finish cleanly
-            if hasattr(page, 'thread') and page.thread and page.thread.isRunning():
-                page.thread.quit()  # Optional: ensures QThread event loop exits
-                page.thread.wait(2000)
+    def closeEvent(self, event):
+        """Safely shut down background threads and timers before the window closes."""
+        page_names = ['dashboard_page', 'cpu_page', 'memory_page', 'network_page','disk_page']
+
+        if self.window().isMinimized():
+            return  # Skip shutdown - the app was just minimized
+        
+        for name in page_names:
+            page = getattr(self, name, None)
+            if page:
+                # Stop the UI timer if the page has one
+                if hasattr(page, 'ui_timer') and page.ui_timer:
+                    page.ui_timer.stop()
                 
-    super().closeEvent(event)
+                # Signal the worker thread to stop
+                if hasattr(page, 'worker') and page.worker:
+                    page.worker._stop_event.set()
+                
+                # Wait for the thread to finish cleanly
+                if hasattr(page, 'thread') and page.thread and page.thread.isRunning():
+                    page.thread.quit()  # Optional: ensures QThread event loop exits
+                    page.thread.wait(2000)
+                    
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":
