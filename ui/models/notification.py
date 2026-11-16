@@ -7,6 +7,7 @@ class AlertId(StrEnum):
     """Unique rule identifiers used for debouncing, cooldowns, and clearing."""
     CPU_HIGH = "cpu_high"
     CPU_TEMP_HIGH = "cpu_temp_high"
+    MEMORY_HIGH = "memory_high"     
     DISK_SPACE_LOW = "disk_space_low" 
     DISK_LOW = "disk_low"
     BATTERY_LOW = "battery_low"

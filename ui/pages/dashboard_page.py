@@ -3,27 +3,39 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QGridLayout, QWidget, QVBoxLayout
 
 from ui.widgets.dashboard_card import DashboardCard
+from ui.widgets.system_banner import SystemBanner 
 from ui.data.dashboard_worker import DashboardDataCollector, DashboardSnapshot
+from ui.system_probe import SystemProfile
 
 
 class DashboardPage(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, profile: SystemProfile, parent=None):
         super().__init__(parent)
-        self.cards = {}
 
+        self.cards = {}
+        
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(32, 32, 32, 32)
         main_layout.setSpacing(0)
-
+        
+        # 1. The Grid at the TOP (No stretch above it)
         self.grid = QGridLayout()
         self.grid.setSpacing(20)
-        self._grid()
+        self._grid() 
         main_layout.addLayout(self.grid)
-        main_layout.addStretch()
 
+        # 2. The Middle SPACE (This absorbs all the empty space)
+        main_layout.addStretch(1)
+
+        # 3. The Banner at the BOTTOM (No stretch below it)
+        self.system_banner = SystemBanner(profile, self)
+        main_layout.addWidget(self.system_banner)
+
+        # --- Threading ---
         self.thread = QThread()
         self.worker = DashboardDataCollector()
         self.worker.moveToThread(self.thread)
+        
         self.thread.started.connect(self.worker.work)
         self.worker.finished.connect(self.thread.quit)
 
@@ -31,7 +43,8 @@ class DashboardPage(QWidget):
         self.ui_timer.timeout.connect(self.poll_worker_data)
 
     def _grid(self):
-        columns = 3
+        columns = 3 
+        # Note: Changed to match the Hero layout + sub-rows
         card_configs = [
             ("CPU", ["Speed", "Board"]),
             ("Memory", ["Total", "Available"]),
@@ -44,6 +57,7 @@ class DashboardPage(QWidget):
         for index, (title, rows) in enumerate(card_configs):
             row = index // columns
             col = index % columns
+
             card = DashboardCard(title=title, rows=rows)
             self.cards[title] = card
             self.grid.addWidget(card, row, col)
@@ -89,6 +103,7 @@ class DashboardPage(QWidget):
             card = self.cards["CPU"]
             if snapshot.cpu_usage_pct is not None:
                 color = "#ff4444" if snapshot.cpu_usage_pct > 80 else ("#ffbb33" if snapshot.cpu_usage_pct > 50 else None)
+                # SET HERO
                 card.set_hero(f"{snapshot.cpu_usage_pct:.1f}%", snapshot.cpu_usage_pct, color)
             if snapshot.cpu_freq_mhz is not None:
                 card.update_row("Speed", f"{snapshot.cpu_freq_mhz / 1000:.2f} GHz")
@@ -98,6 +113,7 @@ class DashboardPage(QWidget):
         if "Memory" in self.cards:
             card = self.cards["Memory"]
             if snapshot.ram_used_gb is not None:
+                # SET HERO
                 card.set_hero(f"{snapshot.ram_used_gb:.1f} GB", snapshot.ram_used_pct)
             if snapshot.ram_total_gb is not None:
                 card.update_row("Total", f"{snapshot.ram_total_gb:.1f} GB")
@@ -108,29 +124,53 @@ class DashboardPage(QWidget):
         # --- GPU CARD ---
         if "GPU" in self.cards:
             card = self.cards["GPU"]
-            gpu_label = snapshot.dgpu_name or snapshot.igpu_name or "Not Detected"
-            card.set_hero(gpu_label if len(gpu_label) < 22 else "Active", None, "#00ff00" if snapshot.dgpu_name else None)
-            card.update_row("iGPU", snapshot.igpu_name if snapshot.igpu_name else "Admin Required", None if snapshot.igpu_name else "#ffbb33")
-            card.update_row("dGPU", snapshot.dgpu_name if snapshot.dgpu_name else "Not Detected", "#00ff00" if snapshot.dgpu_name else None)
+            gpu_label = "Active" if snapshot.dgpu_name else "Integrated"
+            # SET HERO
+            card.set_hero(gpu_label, None, "#00ff00" if snapshot.dgpu_name else None)
+            
+            if snapshot.igpu_name:
+                card.update_row("iGPU", snapshot.igpu_name)
+            else:
+                card.update_row("iGPU", "Admin Required", "#ffbb33")
+
+            if snapshot.dgpu_name:
+                card.update_row("dGPU", snapshot.dgpu_name, "#00ff00")
+            else:
+                card.update_row("dGPU", "Not Detected")
 
         # --- BATTERY CARD ---
         if "Battery" in self.cards:
             card = self.cards["Battery"]
             if snapshot.battery_capacity is not None:
                 color = "#ff4444" if snapshot.battery_capacity < 20 else None
+                # SET HERO
                 card.set_hero(f"{snapshot.battery_capacity}%", snapshot.battery_capacity, color)
-            card.update_row("Status", snapshot.battery_status or "N/A")
+                
+            if snapshot.battery_status:
+                card.update_row("Status", snapshot.battery_status)
+            else:
+                card.update_row("Status", "No Battery")
+
             if snapshot.battery_health is not None:
                 health_color = "#ff4444" if snapshot.battery_health < 80 else None
                 card.update_row("Health", f"{snapshot.battery_health:.0f}%", health_color)
+            else:
+                card.update_row("Health", "--")
+
             if snapshot.battery_online is not None:
-                card.update_row("Plugged In", "Yes (AC)" if snapshot.battery_online else "No (Battery)", "#00ff00" if snapshot.battery_online else "#ffbb33")
+                plugged_text = "Yes (AC)" if snapshot.battery_online else "No (Battery)"
+                plugged_color = "#00ff00" if snapshot.battery_online else "#ffbb33"
+                card.update_row("Plugged In", plugged_text, plugged_color)
+            else:
+                card.update_row("Plugged In", "--")
 
         # --- DISK CARD ---
         if "Disk" in self.cards:
             card = self.cards["Disk"]
             if snapshot.disk_space_free_gb is not None:
+                # SET HERO
                 card.set_hero(f"{snapshot.disk_space_free_gb:.1f} GB Free", snapshot.disk_space_used_pct)
+            
             if snapshot.disk_read_bps is not None:
                 card.update_row("Read", self._format_speed(snapshot.disk_read_bps))
             if snapshot.disk_write_bps is not None:
@@ -141,9 +181,11 @@ class DashboardPage(QWidget):
             card = self.cards["Network"]
             if snapshot.net_download_bps and snapshot.net_download_bps > 0:
                 down_mbps = snapshot.net_download_bps / 1_000_000
+                # SET HERO
                 card.set_hero(f"{down_mbps:.1f} Mbps")
             else:
                 card.set_hero("Idle")
+                
             if snapshot.net_download_bps is not None:
                 card.update_row("Download", self._format_speed(snapshot.net_download_bps))
             if snapshot.net_upload_bps is not None:
@@ -164,3 +206,4 @@ class DashboardPage(QWidget):
     def refresh_theme(self):
         for card in self.cards.values():
             card.refresh_theme()
+        self.system_banner.refresh_theme()

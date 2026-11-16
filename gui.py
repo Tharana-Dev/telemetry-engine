@@ -71,7 +71,7 @@ class WelcomeWindow(QMainWindow):
         self.page_indices["home"] = self.page_stack.addWidget(home_widget)
 
         # -- Telemetry Pages --
-        self.dashboard_page = DashboardPage(self)
+        self.dashboard_page = DashboardPage(self.profile, self)
         self.page_indices["dashboard"] = self.page_stack.addWidget(self.dashboard_page)
 
         self.cpu_page = CpuPage(self)

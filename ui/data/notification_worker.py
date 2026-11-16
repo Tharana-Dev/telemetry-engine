@@ -41,6 +41,9 @@ def _cpu_usage(snap):
     v = _get(snap, "usage_pct")
     return float(v) if isinstance(v, (int, float)) else None
 
+def _memory_pct(mem):
+    v = _get(mem, "used_pct")
+    return float(v) if isinstance(v, (int, float)) else None
 
 def _cpu_temp(thermal):
     if thermal is None:
@@ -101,6 +104,7 @@ class NotificationWorker(QObject):
         # --- thresholds ---
         self._cpu_pct = 85.0
         self._cpu_temp_c = 85.0
+        self._memory_pct = 85.0
         self._disk_low_pct = 15.0         # warning tier
         self._disk_space_low_pct = 5.0    # critical tier
         self._battery_low_pct = 20.0      # warning tier
@@ -174,6 +178,23 @@ class NotificationWorker(QObject):
             )
         else:
             self._clear(AlertId.CPU_HIGH)
+
+    def _check_memory(self, memory) -> None:
+        pct = _memory_pct(memory)
+        if pct is None:
+            return
+        if pct > self._memory_pct:
+            self._evaluate(
+                AlertId.MEMORY_HIGH,
+                AlertSource.MEMORY,
+                lambda: (
+                    f"Memory usage above {self._memory_pct:.0f}% "
+                    f"for {self._sustained_s()}s."
+                ),
+                AlertSeverity.WARNING,
+            )
+        else:
+            self._clear(AlertId.MEMORY_HIGH)
 
     def _check_cpu_temp(self, thermal) -> None:
         temp = _cpu_temp(thermal)
@@ -303,12 +324,14 @@ class NotificationWorker(QObject):
                 disk_space = self._data.get_disk_space_snapshot()
                 battery = self._data.get_battery_snapshot()
                 net_list = self._data.get_network_snapshot()
+                memory = self._data.get_memory_snapshot()
 
                 # Keep memory + disk I/O samplers warm; no checks yet
                 self._data.get_memory_snapshot()
                 self._data.get_disk_io_snapshot()
 
                 self._check_cpu(cpu)
+                self._check_memory(memory) 
                 self._check_cpu_temp(thermal)
                 self._check_disk_space(disk_space)
                 self._check_battery(battery)

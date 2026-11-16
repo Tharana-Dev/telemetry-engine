@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QProgressBar
+from PySide6.QtWidgets import QSizePolicy, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QProgressBar
 
 from ui.theme import ThemeColors, ThemeFonts
 from ui.personalization import current_theme
@@ -10,7 +10,7 @@ class DashboardCard(QFrame):
     def __init__(self, title: str, rows: list[str], parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
+        
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(24, 24, 24, 24)
         main_layout.setSpacing(12)
@@ -32,6 +32,8 @@ class DashboardCard(QFrame):
         main_layout.addWidget(self._progress_bar)
 
         main_layout.addSpacing(16)
+        main_layout.addStretch(1) 
+
 
         # 4. Sub-Stats
         self._rows: dict[str, QLabel] = {}
@@ -52,8 +54,6 @@ class DashboardCard(QFrame):
 
             main_layout.addWidget(row_widget)
             self._rows[key] = v_lbl
-
-        main_layout.addStretch()
         self.refresh_theme()
 
     def set_hero(self, value: str, progress_pct: float | None = None, color: str | None = None):
