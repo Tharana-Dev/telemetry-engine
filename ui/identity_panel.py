@@ -149,6 +149,16 @@ class IdentityPanel(QFrame):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(14)
 
+        # Inside IdentityPanel.__init__:
+        self.setObjectName("IdentityPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        # Inside _init_power_box:
+        self.power_box = QFrame(self)
+        self.power_box.setObjectName("PowerBox")
+        self.power_box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+
         self._init_header(layout)
         self._divider1 = self._make_divider()
         layout.addWidget(self._divider1)
@@ -168,6 +178,7 @@ class IdentityPanel(QFrame):
 
     def _init_header(self, parent_layout: QVBoxLayout) -> None:
         self.section_lbl = QLabel("YOUR SYSTEM", self)
+        self.section_lbl.setFixedHeight(20)
         parent_layout.addWidget(self.section_lbl)
 
         # Personal monogram avatar
@@ -199,6 +210,7 @@ class IdentityPanel(QFrame):
 
     def _init_footer(self, parent_layout: QVBoxLayout) -> None:
         self._personal_footer = QLabel("—", self)
+        self._personal_footer.setFixedHeight(20)
         parent_layout.addWidget(self._personal_footer)
 
     def _refresh_monogram(self) -> None:
@@ -311,21 +323,66 @@ class IdentityPanel(QFrame):
             }}
         """)
         
-        # 2. Static Labels
-        self.section_lbl.setStyleSheet(f"color: {theme.border}; font-size: {ThemeFonts.SIZE_CAPTION}px; font-weight: 700; letter-spacing: 1px;")
-        self._title_lbl.setStyleSheet(f"color: {theme.text}; font-size: {ThemeFonts.SIZE_TITLE}px; font-weight: 700;")
-        self._personal_footer.setStyleSheet(f"color: {theme.border}; font-size: {ThemeFonts.SIZE_CAPTION}px; font-weight: 500; letter-spacing: 0.3px;")
+        # 2. Static Labels (Now crisp and readable instead of hidden by theme.border!)
+        self.section_lbl.setStyleSheet(
+            f"color: {theme.highlight};"
+            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
+            "font-weight: 800;"
+            "letter-spacing: 1.5px;"
+            "border: none;"
+        )
+        self._title_lbl.setStyleSheet(
+            f"color: {theme.text};"
+            f"font-size: {ThemeFonts.SIZE_TITLE}px;"
+            "font-weight: 700;"
+            "border: none;"
+        )
+        self._personal_footer.setStyleSheet(
+            f"color: {theme.text};"
+            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
+            "font-weight: 500;"
+            "letter-spacing: 0.3px;"
+            "border: none;"
+        )
         
         # 3. Dividers
         divider_style = f"background-color: {theme.border}; border: none;"
         self._divider1.setStyleSheet(divider_style)
         self._divider2.setStyleSheet(divider_style)
         
-        # 4. Power Box
-        self.power_box.setStyleSheet(f"background-color: {theme.bg}; border: 1px solid {theme.border}; border-radius: 8px;")
-        self._pct_lbl.setStyleSheet(f"color: {theme.text}; font-family: {ThemeFonts.FAMILY_MONO}; font-size: {ThemeFonts.SIZE_CAPTION}px; font-weight: 700; border: none;")
-        self._desktop_dot.setStyleSheet(f"color: {theme.highlight}; font-size: {ThemeFonts.SIZE_CAPTION}px; border: none;")
-        self._desktop_status_lbl.setStyleSheet(f"color: {theme.text}; font-size: {ThemeFonts.SIZE_CAPTION}px; font-weight: 600; border: none;")
+        # 4. Scoped Power Box
+        self.power_box.setStyleSheet(f"""
+            QFrame#PowerBox {{
+                background-color: {theme.bg};
+                border: 1px solid {theme.border};
+                border-radius: 8px;
+            }}
+        """)
+        self._pct_lbl.setStyleSheet(
+            f"color: {theme.text};"
+            f"font-family: {ThemeFonts.FAMILY_MONO};"
+            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
+            "font-weight: 700;"
+            "border: none;"
+        )
+        self._desktop_dot.setStyleSheet(
+            f"color: {theme.highlight};"
+            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
+            "border: none;"
+        )
+        self._desktop_status_lbl.setStyleSheet(
+            f"color: {theme.text};"
+            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
+            "font-weight: 600;"
+            "border: none;"
+        )
+
+        self.section_lbl.setStyleSheet(
+            f"background: transparent; color: {theme.highlight};"
+            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
+            "font-weight: 800; letter-spacing: 1.5px; border: none;"
+        )
+
 
         # 5. Spec Rows
         for row in [self._row_hostname, self._row_cpu, self._row_ram, self._row_uptime]:
@@ -336,7 +393,6 @@ class IdentityPanel(QFrame):
         
         if self._profile is not None:
             self.update_profile(self._profile)
-
     # ------------------------------------------------------------------ update
 
     def update_profile(self, profile: SystemProfile) -> None:

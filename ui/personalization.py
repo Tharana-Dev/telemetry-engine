@@ -17,21 +17,18 @@ class ThemePalette:
 # 4 Distinct Theme Packs
 # Order: (name, bg, surface [dark cards], text [numbers/labels], highlight [card titles/graphs], border [hover/lines])
 THEME_PALETTES: tuple[ThemePalette, ...] = (
-    # 1. Aero Interceptor (Deep Sky-Navy BG + Rich Cobalt Cards + Ice-White Text + Electric Sky Accents)
-    ThemePalette("Aero Interceptor", "#082F49", "#0C4A6E", "#F0F9FF", "#38BDF8", "#0369A1"),
+    # 1. Arctic Cobalt (Deep Midnight-Ocean BG + Rich Cobalt-Slate Cards + Ice-White Text + Electric Cyan Accents)
+    ThemePalette("Arctic Cobalt", "#091526", "#11243E", "#F8FAFC", "#38BDF8", "#1E3A5F"),
 
-    # 2. Night City (Carbon Black BG + Dark Graphite Cards + Luminous Yellow Text + Neon Crimson Accents)
-    ThemePalette("Night City", "#09090B", "#18181B", "#FDE047", "#FF2E63", "#27272A"),
+    # 2. Cyber Gold (Pitch Black BG + Dark Onyx Cards + Warm Cream Text + Electric Yellow Accents)
+    ThemePalette("Cyber Gold", "#050507", "#121216", "#FAF5E4", "#FACC15", "#27272A"),
 
     # 3. Emerald Pulse (Deep Jungle-Black BG + Dark Emerald Cards + Crisp Mint-White Text + Neon Aqua Accents)
     ThemePalette("Emerald Pulse", "#022C22", "#064E3B", "#ECFDF5", "#2DD4BF", "#047857"),
 
-    # 4. Crimson Stealth (Obsidian BG + Deep Maroon-Slate Cards + Pure Crisp White Text + Racing Red Accents)
-    ThemePalette("Crimson Stealth", "#0F0A0C", "#1F1318", "#F8FAFC", "#F43F5E", "#381E28"),
+    # 4. Nebula Frost (Deep Midnight-Violet BG + Royal Indigo Cards + Crisp Ice-White Text + Electric Violet Accents)
+    ThemePalette("Nebula Frost", "#0F0C29", "#1E1B4B", "#F8FAFC", "#A78BFA", "#3730A3"),
 )
-
-
-
 
 
 class Personalization(QObject):

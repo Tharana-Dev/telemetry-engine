@@ -120,6 +120,7 @@ class LaunchpadPanel(QWidget):
     def _init_admin_card(self, parent_layout: QVBoxLayout) -> None:
         self._admin_card = QFrame(self)
         self._admin_card.setObjectName("AdminCard")
+        self._admin_card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
         card_layout = QHBoxLayout(self._admin_card)
         card_layout.setContentsMargins(14, 10, 14, 10)
@@ -144,6 +145,7 @@ class LaunchpadPanel(QWidget):
         card_layout.addWidget(self._elevate_btn)
         parent_layout.addWidget(self._admin_card)
 
+
     def _init_hero_panel(self, parent_layout: QVBoxLayout) -> None:
         self._hero_box = QFrame(self)
         
@@ -155,8 +157,11 @@ class LaunchpadPanel(QWidget):
         self._about_title = QLabel("ABOUT & SYSTEM GUIDE", self._hero_box)
         hero_layout.addWidget(self._about_title)
 
+        self._section_headings: list[QLabel] = []
+        self._section_bodies: list[QLabel] = []
+
         # Helper to create a section block
-        def create_section(heading: str, body_html: str) -> QWidget:
+        def create_section(heading: str, body_html: str) -> QLabel:
             w = QWidget(self._hero_box)
             w.setStyleSheet("border: none; background: transparent;")
             l = QVBoxLayout(w)
@@ -164,85 +169,90 @@ class LaunchpadPanel(QWidget):
             l.setSpacing(4) 
             
             h = QLabel(heading, w)
-            # BUMPED FROM 13px TO 15px
-            h.setStyleSheet(f"color: {current_theme().text}; font-size: 15px; font-weight: 700; border: none;") 
+            self._section_headings.append(h)
             
             t = QLabel(body_html, w)
             t.setWordWrap(True)
             t.setOpenExternalLinks(True) 
-            # BUMPED FROM 12px TO 14px. Use theme text color.
-            t.setStyleSheet(f"color: {current_theme().text}; font-size: 14px; line-height: 1.5; border: none;")
+            self._section_bodies.append(t)
             
             l.addWidget(h)
             l.addWidget(t)
-            return w
+            hero_layout.addWidget(w)
+            return t
 
-        # 1. How to read the Graphs
-        hero_layout.addWidget(create_section(
+        create_section(
             "📊 How to read the Graphs",
             "Graphs display data over the last 60 seconds. The X-Axis shows negative time "
             "(e.g., -30s means '30 seconds ago'). 0s represents real-time 'Right Now'."
-        ))
-
-        # 2. What does '--' mean?
-        hero_layout.addWidget(create_section(
+        )
+        create_section(
             "❓ What does '--' mean?",
             "If a metric shows '--', the sensor is unavailable. This usually happens if the app "
             "lacks <b>Administrator privileges</b>, or the hardware driver does not support it."
-        ))
-
-        # 3. Known Limitations
-        hero_layout.addWidget(create_section(
+        )
+        create_section(
             "⚠️ Known Limitations",
             "• <b>CPU Temps</b>: Windows blocks raw MSR reads without Admin rights (WinTmp).<br>"
             "• <b>GPU Utilization</b>: NVIDIA Optimus may route workloads to the iGPU, showing 0% on the dGPU.<br>"
             "• <b>Fan Speeds</b>: Most laptops control fans via the EC, which is often hidden from software."
-        ))
-
-        # 4. Upcoming Versions
-        hero_layout.addWidget(create_section(
+        )
+        create_section(
             "🚀 Upcoming Versions (Roadmap)",
             "• <b>v1.2.x</b>: Process Explorer & Custom Alerts<br>"
             "• <b>v1.3.x</b>: Historical Data Logging (SQLite) & Plugin System"
-        ))
-
-        # 5. Developer Links
-        # We use current_theme().highlight for the link color
-        link_style = f"style='color: {current_theme().highlight}; text-decoration: none; font-weight: bold;'"
-        hero_layout.addWidget(create_section(
-            "👨‍💻 Developer",
-            f"Created by <b>Tharana Nimsara</b><br>"
-            f"<a href='https://github.com/Tharana-dev' {link_style}>GitHub</a> &nbsp;|&nbsp; "
-            f"<a href='https://tharana-dev.vercel.app/' {link_style}>Website</a>"
-        ))
+        )
+        self._dev_body = create_section("👨‍💻 Developer", "")
 
         hero_layout.addStretch()
 
-        # 6. The Ambient Wave Footer
         self._wave = AmbientWaveWidget(self._hero_box)
         hero_layout.addWidget(self._wave)
         
         parent_layout.addWidget(self._hero_box)
 
+
     def refresh_theme(self) -> None:
         """Updates all QSS dynamically when the theme changes."""
         theme = current_theme()
-        
+
         # 1. Header Text
-        self._greeting_lbl.setStyleSheet(f"color: {theme.text}; font-size: {ThemeFonts.SIZE_HERO}px; font-weight: 700; border: none;")
-        self._subtitle_lbl.setStyleSheet(f"color: {theme.text}; font-size: {ThemeFonts.SIZE_BODY}px; border: none;")
-        
+        self._greeting_lbl.setStyleSheet(
+            f"color: {theme.text};"
+            f"font-size: {ThemeFonts.SIZE_HERO}px;"
+            "font-weight: 700;"
+            "border: none;"
+        )
+        self._subtitle_lbl.setStyleSheet(
+            f"color: {theme.text};"
+            f"font-size: {ThemeFonts.SIZE_BODY}px;"
+            "border: none;"
+        )
+
         # 2. Admin Card
-        self._admin_title.setStyleSheet(f"font-size: {ThemeFonts.SIZE_BODY}px; font-weight: 700; border: none;")
-        self._admin_desc.setStyleSheet(f"color: {theme.text}; font-size: {ThemeFonts.SIZE_CAPTION}px; border: none;")
+        self._admin_card.setStyleSheet(
+            f"QFrame#AdminCard {{ background-color: {theme.surface};"
+            f"border: 1px solid {theme.highlight}; border-radius: 8px; }}"
+        )
+        self._admin_title.setStyleSheet(
+            f"color: {theme.highlight};"
+            f"font-size: {ThemeFonts.SIZE_BODY}px;"
+            "font-weight: 700;"
+            "border: none;"
+        )
+        self._admin_desc.setStyleSheet(
+            f"color: {theme.text};"
+            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
+            "border: none;"
+        )
         self._elevate_btn.setStyleSheet(
             f"background-color: {theme.highlight};"
             f"color: {theme.bg};"
             "border: none; border-radius: 6px; padding: 6px 12px;"
             f"font-size: {ThemeFonts.SIZE_CAPTION}px; font-weight: 700;"
         )
-        
-        # 3. Hero Panel
+
+         # 3. Hero Panel & Guide Sections
         self._hero_box.setStyleSheet(f"""
             QFrame {{
                 background-color: {theme.surface};
@@ -258,8 +268,25 @@ class LaunchpadPanel(QWidget):
             letter-spacing: 2px;
             border: none;
         """)
-        
-        # 4. Ambient Wave
+
+        for h in self._section_headings:
+            h.setStyleSheet(
+                f"color: {theme.highlight}; font-size: 15px; font-weight: 700; border: none;"
+            )
+
+        for t in self._section_bodies:
+            t.setStyleSheet(
+                f"color: {theme.text}; font-size: 14px; line-height: 1.5; border: none;"
+            )
+
+        link_style = f"style='color: {theme.highlight}; text-decoration: none; font-weight: bold;'"
+        self._dev_body.setText(
+            f"Created by <b>Tharana Nimsara</b><br>"
+            f"<a href='https://github.com' {link_style}>GitHub</a> &nbsp;|&nbsp; "
+            f"<a href='https://vercel.app' {link_style}>Website</a>"
+        )
+
+         # 4. Ambient Wave
         if hasattr(self, "_wave"):
             self._wave.update()
 
