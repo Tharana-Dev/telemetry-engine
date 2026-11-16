@@ -1,30 +1,10 @@
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from ui.models.worker_return_models import NetworkWorkerSnapshot
 from PySide6.QtCore import QObject, Signal
-import platform
+from ui.models.get_sampler import get_sampler
 from engine.logger import logger
-
-def get_sampler():
-    if platform.system() == "Windows":
-        from engine.universal_sampler import PsutilCollector
-        return PsutilCollector()
-    else:
-        from engine.linux_sampler import LinuxCollector
-        return LinuxCollector()
-
-@dataclass(frozen=True)
-class NetworkWorkerSnapshot:
-    interface: str | None
-    status: str | None
-    download_bps: float | None
-    upload_bps: float | None
-    rx_errors: int | None
-    tx_errors: int | None
-    rx_drops: int | None
-    tx_drops: int | None
-    total_bytes: int | None
 
 class NetworkWorker(QObject):
     finished = Signal()

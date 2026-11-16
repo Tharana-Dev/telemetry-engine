@@ -19,5 +19,5 @@ wmi==1.5.1
 pywin32==306
 
 # Hardware Sensors (Pinned to a stable pre-1.0 release to avoid LibreHardwareMonitor DLL conflicts)
-WinTmp==0.0.9
+WinTmp==1.0.0
 pythonnet==3.0.3

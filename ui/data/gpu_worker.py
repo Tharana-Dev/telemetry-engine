@@ -1,25 +1,10 @@
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from ui.models.worker_return_models import GpuWorkerSnapshot
 from PySide6.QtCore import QObject, Signal
-import platform
+from ui.models.get_sampler import get_sampler
 from engine.logger import logger
-from engine.models import GpuInfo
-
-def get_sampler():
-    if platform.system() == "Windows":
-        from engine.universal_sampler import PsutilCollector
-        return PsutilCollector()
-    else:
-        from engine.linux_sampler import LinuxCollector
-        return LinuxCollector()
-
-@dataclass(frozen=True)
-class GpuWorkerSnapshot:
-    gpus: list[GpuInfo]
-    is_available: bool
-    igpu_name: str | None
 
 class GpuWorker(QObject):
     finished = Signal()

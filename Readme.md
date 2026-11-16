@@ -4,7 +4,7 @@ A high-performance, cross-platform system telemetry engine written in Python. It
 
 The project features two frontends:
 1. **CLI**: Built using `rich` and a non-blocking Producer/Consumer threading model, ensuring the UI renders smoothly at 4Hz regardless of hardware polling delays.
-2. **GUI**: Built with `PySide6` and `pyqtgraph`, featuring a cyberpunk-inspired, dynamically themed dark-mode interface with 60FPS live graphs and zero-latency data decoupling.
+2. **GUI**: Built with `PySide6` and `pyqtgraph`, featuring a cyberpunk-inspired, dynamically themed dark-mode interface with 60FPS live graphs, dual-timer data decoupling, and a live background notification system.
 
 ---
 
@@ -18,14 +18,17 @@ The project features two frontends:
 | `v0.5.x` | Unified Architecture | Replaced custom Enums with standard exceptions. Centralized error boundary. Rotating file logger. |
 | `v0.9.x` | CLI & Threading | `rich.live` dashboard, dynamic progress bars, Producer/Consumer threading. |
 | `v1.0.x` | Universal Engine | Complete Windows support via `psutil`, `wmi`, `winreg`, and `WinTmp`. Graceful privilege degradation. |
-| `v1.1.x` | **UI Architecture** | **Complete PySide6 GUI overhaul. 7 functional pages, LiveGraphs, StatCards, dynamic accent theming, and Dual-Timer data fetching.** |
+| `v1.1.x` | **UI Architecture** | Complete PySide6 GUI overhaul. 7 functional pages, LiveGraphs, StatCards, dual-timer data fetching. |
+| `v1.2.x` | **Live Alerts & Theme Packs** | **Background notification engine (strikes, cooldowns, resolution), NotificationPage UI, and 5-color Theme Pack system replacing single-accent theming.** |
 
 ---
+
 ## 🖥️ Platform Support
 
 - **Backend Engine (`engine/`)**: Fully cross-platform. Supports deep hardware extraction on both **Windows** (via `psutil`, `wmi`, `winreg`, `WinTmp`) and **Linux** (via direct `/proc` and `/sys` kernel hooking).
 - **CLI (`cli/`)**: Fully cross-platform. Runs natively on Windows, Linux, and macOS.
 - **GUI (`ui/`)**: Currently optimized for **Windows** (Windows 10/11). While the PySide6 frontend is technically cross-platform, the current hardware fallbacks, Admin elevation manifest (`.exe`), and sensor error handling (WinTmp/WMI) are specifically designed for the Windows ecosystem. Linux/macOS GUI support is planned for a future release.
+
 ---
 
 ## 🔥 Key Features
@@ -40,22 +43,34 @@ The project features two frontends:
 ### User Interface (GUI)
 - **Dual-Timer Decoupling:** The UI uses two independent timers. A 30ms timer renders graphs at 60FPS, while a 1000ms timer updates the text `StatCards` exactly once per second, preventing flickering and saving CPU cycles.
 - **Reusable Component Library:** Extracted `LiveGraph` (PyQtGraph) and `StatCard`/`DashboardCard` widgets, allowing rapid development of new hardware pages without duplicating QSS or layout code.
-- **Dynamic Theming Engine:** A singleton `Personalization` module broadcasts signals when the user changes the accent color. Every SVG, graph pen, and text highlight repaints instantly.
+- **5-Color Theme Pack System:** The `Personalization` singleton broadcasts `theme_changed` signals when the user selects a theme from the sidebar. Each theme is a 5-color pack (`bg`, `surface`, `text`, `highlight`, `border`) that instantly recolors every SVG, graph pen, QSS stylesheet, and notification card across the entire app.
 - **Dynamic Multi-GPU Support:** The GPU page automatically detects and generates cards for every available NVIDIA GPU (or falls back to the iGPU if no dGPU is present).
 - **Zero-Garbage-Collection Crashes:** Graph widgets are bound to class scope (rather than factory functions) to prevent PySide6 C++ memory pointers from being prematurely destroyed.
 - **Thread-Safe Data Pipeline:** Background `QThread` workers poll hardware at 10Hz, pushing data into a thread-safe `deque`. The UI thread safely drains the queue without blocking the event loop.
+- **Minimize-Aware Workers:** Page workers auto-pause on page navigation but continue running while the window is minimized, ensuring continuous data collection and graph continuity.
+
+### Notification Engine
+- **Background Alert Worker:** A dedicated `NotificationWorker` runs for the entire app lifetime on its own `QThread` (3-second poll interval, ~0.16% of one CPU core). It continues monitoring even when the window is minimized or the user is on a different page.
+- **Strike-Based Debouncing:** Alerts require the condition to hold for 10 consecutive polls (30 seconds) before firing. This filters out transient spikes (e.g., opening a window).
+- **5-Minute Cooldowns:** After firing, an alert enters a cooldown to prevent spam. If the condition persists, it will fire again after 5 minutes.
+- **Three-Tier Severity System:** `INFO`, `WARNING`, `CRITICAL`. Battery and disk have dual-tier logic — at `BATTERY_CRITICAL`, the `BATTERY_LOW` warning is cleared to prevent dual-fire spam.
+- **Auto-Resolution:** When a condition clears, the worker emits `notification_cleared`, and the UI marks the card as "✓ RESOLVED" (history is preserved).
+- **Live Notification Feed:** The `NotificationPage` shows a scrollable, severity-color-coded feed of all alerts with `[SOURCE]` tags, timestamps, and a "Clear Resolved" button.
+- **In-Memory Session Storage:** Notifications are stored in memory for the session only. No disk persistence (planned for v1.3.x).
 
 ---
 
 ## ⚠️ Known Limitations
 
 - **Windows Thermal Sensors:** 
-  - **Admin Required:** Windows blocks raw CPU MSR reads. `WinTmp` requires the terminal to be run as Administrator to read CPU temps. Without it, CPU Temp shows `--` (the UI explicitly shows "Admin Required").
-  - **Core Isolation:** Windows Defender's Memory Integrity can block `WinTmp` from reading sensors entirely, even as Admin. The engine will safely fall back to WMI or `N/A`.
+  - **Admin Required:** Windows blocks raw CPU MSR reads. `WinTmp` requires Administrator privileges to read CPU temps. Without it, CPU Temp shows `--` (the UI explicitly shows "Admin Required").
+  - **WinTmp Version:** Pinned to `1.0.0`. Newer releases (1.1.x+) have a `RAMSPDToolkit-NDD.dll` dependency issue on some systems that causes WinTmp to fail to load.
   - **Antivirus Flags:** `WinTmp` uses the `WinRing0` driver, which Windows Defender often flags as a vulnerable driver (CVE-2020-14979). For development, a folder exclusion is required.
+  - **Fallback:** If WinTmp cannot read the CPU die (e.g., sensor unavailable), the engine falls back to the Windows ACPI thermal zone via WMI. The fallback typically reads 15-20°C lower than the actual CPU die.
 - **NVIDIA Optimus Routing:** On hybrid laptops (e.g., ASUS TUF), Windows silently routes standard OpenGL/DirectX workloads to the iGPU to save battery. This causes the dGPU utilization to show `0%` in the app. Users must force the dGPU via Windows Graphics Settings for specific `.exe` files.
 - **Laptop Fan Speeds:** On almost all laptops, physical fans are controlled by the motherboard's Embedded Controller (EC). `pynvml` will correctly return `N/A` for laptop dGPU fans.
 - **Disk Space Scope:** The engine only monitors the primary root partition (`/` on Linux, `C:\` on Windows).
+- **Notification Persistence:** Notifications are session-only. Restarting the app clears the feed (SQLite persistence planned for v1.3.x).
 
 ---
 
@@ -84,13 +99,34 @@ telemetry-engine/
 │       ├── universal_disk.py
 │       └── universal_network.py
 ├── ui/                        # PySide6 GUI Application (Phase 2)
-│   ├── data/                  # Background QThread workers (CPU, Mem, Net, Disk, GPU)
-│   ├── pages/                 # UI Pages (Dashboard, CPU, Memory, GPU, Disk, Network)
-│   ├── widgets/               # Reusable components (LiveGraph, StatCard, DashboardCard)
-│   ├── theme.py               # Global QSS stylesheets and color palettes
-│   ├── personalization.py     # Accent color singleton and monogram logic
-│   ├── sidebar.py             # Navigation bar and accent swatches
-│   ├── launchpad_panel.py     # Home page guide, roadmap, and admin status
+│   ├── data/                  # Background QThread workers
+│   │   ├── cpu_worker.py
+│   │   ├── memory_worker.py
+│   │   ├── gpu_worker.py
+│   │   ├── disk_worker.py
+│   │   ├── network_worker.py
+│   │   ├── dashboard_worker.py
+│   │   └── notification_worker.py   # Alert engine (strikes, cooldowns, resolution)
+│   ├── models/                # Shared dataclasses
+│   │   ├── notification.py    # AlertId, AlertSource, AlertSeverity, Notification
+│   │   └── get_sampler.py     # Platform-aware sampler factory
+│   ├── pages/                 # UI Pages
+│   │   ├── dashboard_page.py
+│   │   ├── cpu_page.py
+│   │   ├── memory_page.py
+│   │   ├── gpu_page.py
+│   │   ├── disk_page.py
+│   │   ├── network_page.py
+│   │   └── notification_page.py     # Live alert feed
+│   ├── widgets/               # Reusable components
+│   │   ├── live_graph.py      # PyQtGraph wrapper with theme-aware redraws
+│   │   ├── stat_card.py       # Standard key-value card
+│   │   ├── dashboard_card.py  # Hero-value card with progress bar
+│   │   └── notification_card.py     # Single alert card with severity borders
+│   ├── theme.py               # Global QSS stylesheets and color proxy
+│   ├── personalization.py     # 5-color ThemePack singleton + monogram helpers
+│   ├── sidebar.py             # Navigation bar with theme swatch previews
+│   ├── launchpad_panel.py     # Home page guide, roadmap, admin status
 │   └── identity_panel.py      # Home page hardware specs card
 ├── tests/                     # 205+ Pytest unit tests
 ├── app.manifest               # UAC Admin elevation for Nuitka compilation
@@ -105,14 +141,15 @@ telemetry-engine/
 
 ## 🖥️ Expected Output (GUI Architecture)
 
-The GUI features a persistent left sidebar for navigation, dynamic accent colors, and 7 fully functional pages:
-*   **Home**: User greeting, WinTmp Admin status, hardware specs, an interactive "About & System Guide" (explaining graphs, `--` values, and limitations), a roadmap, and developer links.
+The GUI features a persistent left sidebar for navigation, dynamic Theme Packs, and **8 fully functional pages**:
+*   **Home**: User greeting, WinTmp Admin status, hardware specs, an interactive "About & System Guide" (explaining graphs, `--` values, limitations), a roadmap, and developer links.
 *   **Dashboard**: A 3x2 grid of `DashboardCard`s showing live CPU, Memory, GPU, Battery, Disk, and Network telemetry, featuring word-wrap for long hardware names.
 *   **CPU**: Two 60FPS `LiveGraph`s (Utilization & Frequency) and two `StatCard`s (Processor Info & Live Metrics with Max Temp tracking).
 *   **Memory**: Two `LiveGraph`s (Utilization & Allocation) and two `StatCard`s (Overview & Details).
 *   **GPU**: Two 60FPS `LiveGraph`s (Temperature & Utilization) and dynamic multi-GPU `StatCard`s.
 *   **Disk**: Two 60FPS `LiveGraph`s (Read & Write speeds) and two `StatCard`s (Storage Space & Live I/O).
 *   **Network**: Two 60FPS `LiveGraph`s (Download & Upload speed) with dynamic Y-axis scaling, and three `StatCard`s (Connection, Live Traffic, Link Quality).
+*   **Notifications**: A scrollable alert feed with `[SOURCE]` tags, severity color-coded left borders, timestamps, and auto-resolved cards. Includes an empty state ("All clear.") and a "Clear Resolved" button.
 
 ---
 
@@ -176,6 +213,7 @@ pytest -v
 | Disk I/O | 0.15 ms | 0.15 ms | `psutil.disk_io_counters` |
 | **Network** | **36.7 ms** | **36.7 ms** | Slow due to enumerating all Windows virtual adapters. Handled safely by the background thread. |
 | **Thermal** | **~1585 ms** | **~3.6 ms** | WinTmp cold start. Cached by the background thread. |
+| **Notification Worker** | **~2 ms** | **~2 ms** | Full sweep of all samplers at 3s cadence. Uses ~0.16% of one CPU core. |
 
 *(Note: The 3.8ms target was for synchronous execution. Because hardware polling runs in isolated background `QThreads` in the GUI, latencies up to 500ms have zero impact on UI frame rate).*
 
@@ -187,3 +225,14 @@ Created by **Tharana Nimsara**
 
 - **GitHub**: [https://github.com/Tharana-dev](https://github.com/Tharana-dev)
 - **Website**: [https://tharana-dev.vercel.app/](https://tharana-dev.vercel.app/)
+```
+
+### Summary of Updates:
+
+1. **Version History** — Added `v1.2.x` milestone
+2. **Key Features** — Split into 3 sub-sections now: Backend, GUI, and the new **Notification Engine** (with strike system, cooldowns, auto-resolution, severity tiers)
+3. **Known Limitations** — Added a note about session-only notification storage
+4. **Project Layout** — Added `ui/models/`, all new workers, `notification_page.py`, and `notification_card.py`
+5. **Expected GUI Output** — Now 8 pages (added Notifications)
+6. **Performance Table** — Added a row for the `NotificationWorker` (~2ms per cycle, ~0.16% of one core)
+7. **Theme Pack System** — Renamed "Dynamic Theming Engine" to "5-Color Theme Pack System" to reflect the new architecture
