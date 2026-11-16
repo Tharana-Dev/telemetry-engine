@@ -11,9 +11,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.personalization import current_accent, monogram_for
+from ui.personalization import current_theme, monogram_for
 from ui.system_probe import DeviceType, SystemProfile
-from ui.theme import StyleSheets, ThemeColors, ThemeFonts
+from ui.theme import StyleSheets, ThemeFonts
 
 _LAPTOP_SVG = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -74,7 +74,7 @@ class _ElidedValueLabel(QLabel):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.setMinimumWidth(120)
         self.setStyleSheet(
-            f"color: {ThemeColors.TEXT_PRIMARY};"
+            f"color: {current_theme().text};"
             f"font-family: {ThemeFonts.FAMILY_MONO};"
             f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
             "font-weight: 600;"
@@ -110,17 +110,26 @@ class _SpecRow(QWidget):
         layout.setContentsMargins(0, 2, 0, 2)
         layout.setSpacing(8)
 
-        key_lbl = QLabel(label.upper(), self)
-        key_lbl.setStyleSheet(
-            f"color: {ThemeColors.TEXT_SECONDARY};"
+        self.key_lbl = QLabel(label.upper(), self)
+        self._val_lbl = _ElidedValueLabel(value, self)
+
+        layout.addWidget(self.key_lbl)
+        layout.addWidget(self._val_lbl, 1)
+        
+        self.refresh_theme()
+
+    def refresh_theme(self):
+        self.key_lbl.setStyleSheet(
+            f"color: {current_theme().text};"
             f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
             "font-weight: 600;"
         )
-
-        self._val_lbl = _ElidedValueLabel(value, self)
-
-        layout.addWidget(key_lbl)
-        layout.addWidget(self._val_lbl, 1)
+        self._val_lbl.setStyleSheet(
+            f"color: {current_theme().text};"
+            f"font-family: {ThemeFonts.FAMILY_MONO};"
+            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
+            "font-weight: 600;"
+        )
 
     def set_value(self, text: str) -> None:
         self._val_lbl.set_value(text)
@@ -141,14 +150,16 @@ class IdentityPanel(QFrame):
         layout.setSpacing(14)
 
         self._init_header(layout)
-        layout.addWidget(self._make_divider())
+        self._divider1 = self._make_divider()
+        layout.addWidget(self._divider1)
         self._init_specs(layout)
-        layout.addWidget(self._make_divider())
+        self._divider2 = self._make_divider()
+        layout.addWidget(self._divider2)
         self._init_power_box(layout)
         layout.addStretch()
         self._init_footer(layout)
 
-        self._refresh_monogram()
+        self.refresh_theme()
 
         if profile is not None:
             self.update_profile(profile)
@@ -156,27 +167,16 @@ class IdentityPanel(QFrame):
     # ------------------------------------------------------------------ header
 
     def _init_header(self, parent_layout: QVBoxLayout) -> None:
-        section_lbl = QLabel("YOUR SYSTEM", self)
-        section_lbl.setStyleSheet(
-            f"color: {ThemeColors.TEXT_MUTED};"
-            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
-            "font-weight: 700;"
-            "letter-spacing: 1px;"
-        )
-        parent_layout.addWidget(section_lbl)
+        self.section_lbl = QLabel("YOUR SYSTEM", self)
+        parent_layout.addWidget(self.section_lbl)
 
         # Personal monogram avatar
         self._monogram = QLabel("★", self)
         self._monogram.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._monogram.setFixedSize(72, 72)  # Was 56, 56 (Bigger circle)
+        self._monogram.setFixedSize(72, 72)
         parent_layout.addWidget(self._monogram)
 
         self._title_lbl = QLabel("Detecting System...", self)
-        self._title_lbl.setStyleSheet(
-            f"color: {ThemeColors.TEXT_PRIMARY};"
-            f"font-size: {ThemeFonts.SIZE_TITLE}px;"
-            "font-weight: 700;"
-        )
         parent_layout.addWidget(self._title_lbl)
 
         os_row = QHBoxLayout()
@@ -184,11 +184,8 @@ class IdentityPanel(QFrame):
         os_row.setSpacing(8)
 
         self._os_badge = QLabel("—", self)
-        self._os_badge.setStyleSheet(
-            StyleSheets.badge_style(ThemeColors.BG_BASE, current_accent().primary)
-        )
 
-        # Small device glyph next to the OS pill (was the big 48x48 icon before).
+        # Small device glyph next to the OS pill
         self._device_icon = QSvgWidget(self)
         self._device_icon.setFixedSize(24, 24)
         self._device_icon.setStyleSheet("background-color: transparent; border: none;")
@@ -202,24 +199,18 @@ class IdentityPanel(QFrame):
 
     def _init_footer(self, parent_layout: QVBoxLayout) -> None:
         self._personal_footer = QLabel("—", self)
-        self._personal_footer.setStyleSheet(
-            f"color: {ThemeColors.TEXT_MUTED};"
-            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
-            "font-weight: 500;"
-            "letter-spacing: 0.3px;"
-        )
         parent_layout.addWidget(self._personal_footer)
 
     def _refresh_monogram(self) -> None:
-        accent = current_accent()
+        theme = current_theme()
         self._monogram.setStyleSheet(f"""
             QLabel {{
-                background-color: {ThemeColors.BG_BASE};
-                color: {accent.primary};
-                border: 2px solid {accent.primary};
-                border-radius: 36px;  /* Half of 72 */
+                background-color: {theme.bg};
+                color: {theme.highlight};
+                border: 2px solid {theme.highlight};
+                border-radius: 36px;
                 font-family: {ThemeFonts.FAMILY_UI};
-                font-size: 28px;      /* Was 22px */
+                font-size: 28px;
                 font-weight: 800;
             }}
         """)
@@ -243,19 +234,14 @@ class IdentityPanel(QFrame):
     # ------------------------------------------------------------------ power
 
     def _init_power_box(self, parent_layout: QVBoxLayout) -> None:
-        power_box = QFrame(self)
-        power_box.setStyleSheet(
-            f"background-color: {ThemeColors.BG_BASE};"
-            f"border: 1px solid {ThemeColors.BORDER_SUBTLE};"
-            "border-radius: 8px;"
-        )
-        box_layout = QVBoxLayout(power_box)
+        self.power_box = QFrame(self)
+        box_layout = QVBoxLayout(self.power_box)
         box_layout.setContentsMargins(12, 10, 12, 10)
         box_layout.setSpacing(8)
 
-        box_layout.addWidget(self._build_laptop_power_view(power_box))
-        box_layout.addWidget(self._build_desktop_power_view(power_box))
-        parent_layout.addWidget(power_box)
+        box_layout.addWidget(self._build_laptop_power_view(self.power_box))
+        box_layout.addWidget(self._build_desktop_power_view(self.power_box))
+        parent_layout.addWidget(self.power_box)
 
     def _build_laptop_power_view(self, parent: QWidget) -> QWidget:
         self._laptop_power_widget = QWidget(parent)
@@ -272,13 +258,6 @@ class IdentityPanel(QFrame):
 
         self._src_badge = QLabel(self._laptop_power_widget)
         self._pct_lbl = QLabel(self._laptop_power_widget)
-        self._pct_lbl.setStyleSheet(
-            f"color: {ThemeColors.TEXT_PRIMARY};"
-            f"font-family: {ThemeFonts.FAMILY_MONO};"
-            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
-            "font-weight: 700;"
-            "border: none;"
-        )
 
         top_row.addWidget(self._src_badge)
         top_row.addStretch()
@@ -303,22 +282,11 @@ class IdentityPanel(QFrame):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
 
-        dot = QLabel("●", self._desktop_power_widget)
-        dot.setStyleSheet(
-            f"color: {ThemeColors.STATUS_OK};"
-            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
-            "border: none;"
-        )
-        status_lbl = QLabel("Mains AC • Continuous Power", self._desktop_power_widget)
-        status_lbl.setStyleSheet(
-            f"color: {ThemeColors.TEXT_PRIMARY};"
-            f"font-size: {ThemeFonts.SIZE_CAPTION}px;"
-            "font-weight: 600;"
-            "border: none;"
-        )
+        self._desktop_dot = QLabel("●", self._desktop_power_widget)
+        self._desktop_status_lbl = QLabel("Mains AC • Continuous Power", self._desktop_power_widget)
 
-        row.addWidget(dot)
-        row.addWidget(status_lbl)
+        row.addWidget(self._desktop_dot)
+        row.addWidget(self._desktop_status_lbl)
         row.addStretch()
         return self._desktop_power_widget
 
@@ -326,16 +294,46 @@ class IdentityPanel(QFrame):
         line = QFrame(self)
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFixedHeight(1)
-        line.setStyleSheet(
-            f"background-color: {ThemeColors.BORDER_SUBTLE}; border: none;"
-        )
         return line
 
     # ------------------------------------------------------------------ accent refresh
 
-    def refresh_accent(self) -> None:
-        """Re-render the parts of this panel tinted by the user's accent color."""
+    def refresh_theme(self) -> None:
+        """Re-render the parts of this panel tinted by the current theme."""
+        theme = current_theme()
+        
+        # 1. Panel Background
+        self.setStyleSheet(f"""
+            QFrame#IdentityPanel {{
+                background-color: {theme.surface};
+                border: 1px solid {theme.border};
+                border-radius: 12px;
+            }}
+        """)
+        
+        # 2. Static Labels
+        self.section_lbl.setStyleSheet(f"color: {theme.border}; font-size: {ThemeFonts.SIZE_CAPTION}px; font-weight: 700; letter-spacing: 1px;")
+        self._title_lbl.setStyleSheet(f"color: {theme.text}; font-size: {ThemeFonts.SIZE_TITLE}px; font-weight: 700;")
+        self._personal_footer.setStyleSheet(f"color: {theme.border}; font-size: {ThemeFonts.SIZE_CAPTION}px; font-weight: 500; letter-spacing: 0.3px;")
+        
+        # 3. Dividers
+        divider_style = f"background-color: {theme.border}; border: none;"
+        self._divider1.setStyleSheet(divider_style)
+        self._divider2.setStyleSheet(divider_style)
+        
+        # 4. Power Box
+        self.power_box.setStyleSheet(f"background-color: {theme.bg}; border: 1px solid {theme.border}; border-radius: 8px;")
+        self._pct_lbl.setStyleSheet(f"color: {theme.text}; font-family: {ThemeFonts.FAMILY_MONO}; font-size: {ThemeFonts.SIZE_CAPTION}px; font-weight: 700; border: none;")
+        self._desktop_dot.setStyleSheet(f"color: {theme.highlight}; font-size: {ThemeFonts.SIZE_CAPTION}px; border: none;")
+        self._desktop_status_lbl.setStyleSheet(f"color: {theme.text}; font-size: {ThemeFonts.SIZE_CAPTION}px; font-weight: 600; border: none;")
+
+        # 5. Spec Rows
+        for row in [self._row_hostname, self._row_cpu, self._row_ram, self._row_uptime]:
+            row.refresh_theme()
+        
+        # 6. Monogram & Icon
         self._refresh_monogram()
+        
         if self._profile is not None:
             self.update_profile(self._profile)
 
@@ -344,10 +342,10 @@ class IdentityPanel(QFrame):
     def update_profile(self, profile: SystemProfile) -> None:
         """Populates or refreshes all labels, the SVG icon, and the power section."""
         self._profile = profile
-        accent = current_accent()
+        theme = current_theme()
 
         # Retinted device glyph next to the OS pill.
-        raw_svg = _svg_for(profile.device_type, accent.primary)
+        raw_svg = _svg_for(profile.device_type, theme.highlight)
         self._device_icon.load(QByteArray(raw_svg.encode("utf-8")))
 
         # Personal touches.
@@ -357,7 +355,7 @@ class IdentityPanel(QFrame):
         self._title_lbl.setText(profile.device_type.label)
         self._os_badge.setText(f"{profile.os_name} {profile.os_release}")
         self._os_badge.setStyleSheet(
-            StyleSheets.badge_style(ThemeColors.BG_BASE, accent.primary)
+            StyleSheets.badge_style(theme.bg, theme.highlight)
         )
 
         self._row_hostname.set_value(profile.hostname)
@@ -374,18 +372,18 @@ class IdentityPanel(QFrame):
 
         if is_laptop_battery:
             is_ac = profile.power_source == "AC Power"
-            badge_color = ThemeColors.STATUS_OK if is_ac else ThemeColors.STATUS_WARN
+            badge_color = theme.highlight if is_ac else "#F59E0B" # Highlight or Amber
 
             self._src_badge.setText(profile.power_source)
             self._src_badge.setStyleSheet(
-                StyleSheets.badge_style(ThemeColors.BG_SURFACE, badge_color)
+                StyleSheets.badge_style(theme.surface, badge_color)
             )
             self._pct_lbl.setText(f"{profile.battery_percent}%")
             self._battery_bar.setValue(profile.battery_percent)
             self._battery_bar.setStyleSheet(
                 f"""
                 QProgressBar {{
-                    background-color: {ThemeColors.BG_SURFACE};
+                    background-color: {theme.surface};
                     border: none;
                     border-radius: 4px;
                 }}

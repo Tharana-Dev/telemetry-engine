@@ -35,7 +35,7 @@ class DiskPage(QWidget):
         self._stats_layout.addWidget(self._io_card)
 
         self._layout.addLayout(self._graph_layout, stretch=3)
-        self._layout.addLayout(self._stats_layout, stretch=2)
+        self._layout.addLayout(self._stats_layout, stretch=1)
 
         # 3. Data & Threading
         self._read_data = []
@@ -121,13 +121,13 @@ class DiskPage(QWidget):
         if not self.thread.isRunning():
             self.worker._stop_event.clear()
             self.thread.start()
-            self.graph_timer.start(16)
+            self.graph_timer.start(30)
             self.card_timer.start(1000)
 
     def hideEvent(self, event):
         super().hideEvent(event)
         if self.window().isMinimized():
-            return  # Skip shutdown - the app was just minimized
+            return
         self.graph_timer.stop()
         self.card_timer.stop()
         if hasattr(self, 'worker') and self.worker:
@@ -145,8 +145,8 @@ class DiskPage(QWidget):
             self.thread.wait(2000)
         super().closeEvent(event)
 
-    def refresh_accent(self):
-        self._read_graph.refresh_accent()
-        self._write_graph.refresh_accent()
-        self._space_card.refresh_accent()
-        self._io_card.refresh_accent()
+    def refresh_theme(self):
+        self._read_graph.refresh_theme()
+        self._write_graph.refresh_theme()
+        self._space_card.refresh_theme()
+        self._io_card.refresh_theme()

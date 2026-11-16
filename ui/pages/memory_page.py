@@ -6,16 +6,18 @@ from ui.data.memory_worker import MemoryWorker, MemoryWorkerSnapshot
 from ui.widgets.stat_card import StatCard
 from ui.widgets.live_graph import LiveGraph
 
+
 class MemoryPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(32, 32, 32, 32)
         self._layout.setSpacing(20)
 
+        # 1. Graphs
         self._graph_layout = QHBoxLayout()
-        self._graph_layout.setSpacing(20)  
+        self._graph_layout.setSpacing(20)
 
         self._pct_graph = LiveGraph("Memory Utilization", "Usage (%)", (0, 100))
         self._gb_graph = LiveGraph("Memory Allocation", "Used (GB)", (0, 16))
@@ -23,6 +25,7 @@ class MemoryPage(QWidget):
         self._graph_layout.addWidget(self._pct_graph)
         self._graph_layout.addWidget(self._gb_graph)
 
+        # 2. Stat Cards
         self._stats_layout = QHBoxLayout()
         self._stats_layout.setSpacing(20)
         
@@ -33,8 +36,9 @@ class MemoryPage(QWidget):
         self._stats_layout.addWidget(self._details_card)
 
         self._layout.addLayout(self._graph_layout, stretch=3)
-        self._layout.addLayout(self._stats_layout, stretch=1) 
+        self._layout.addLayout(self._stats_layout, stretch=1)
 
+        # 3. Data & Threading
         self._pct_data = []
         self._gb_data = []
         self._has_set_y_axis = False
@@ -65,7 +69,6 @@ class MemoryPage(QWidget):
 
         latest = pending[-1] 
 
-        # --- Update Cards ---
         if latest.used_gb is not None:
             self._overview_card.update_row("Used", f"{latest.used_gb:.1f} GB")
         else:
@@ -74,7 +77,6 @@ class MemoryPage(QWidget):
         if latest.total_gb is not None:
             self._overview_card.update_row("Total", f"{latest.total_gb:.1f} GB")
             
-            # Dynamic Y-Axis: The first time we get total_gb, adjust the GB graph's Y-axis
             if not self._has_set_y_axis:
                 self._gb_graph.setYRange(0, latest.total_gb, padding=0)
                 self._has_set_y_axis = True
@@ -92,13 +94,11 @@ class MemoryPage(QWidget):
         else:
             self._details_card.update_row("Available", "--")
             
-        # Fun little status indicator
         if latest.used_pct is not None:
             status = "Stable" if latest.used_pct < 80 else "High Load"
             color = "#00ff00" if latest.used_pct < 80 else "#ff4444"
             self._details_card.update_row("Status", status, color)
 
-        # --- Update Graphs ---
         self._pct_graph.set_data(self._pct_data)
         self._gb_graph.set_data(self._gb_data)
 
@@ -112,12 +112,10 @@ class MemoryPage(QWidget):
     def hideEvent(self, event):
         super().hideEvent(event)
         if self.window().isMinimized():
-            return  # Skip shutdown - the app was just minimized
+            return
         self.timer.stop()
-
         if hasattr(self, 'worker') and self.worker:
             self.worker._stop_event.set()
-
         if hasattr(self, 'thread') and self.thread.isRunning():
             self.thread.quit()
             self.thread.wait()
@@ -130,10 +128,8 @@ class MemoryPage(QWidget):
             self.thread.wait(2000)
         super().closeEvent(event)
 
-    def refresh_accent(self):
-        self._pct_graph.refresh_accent()
-        self._gb_graph.refresh_accent()
-
-        self._overview_card.refresh_accent()
-        self._details_card.refresh_accent()
-        
+    def refresh_theme(self):
+        self._pct_graph.refresh_theme()
+        self._gb_graph.refresh_theme()
+        self._overview_card.refresh_theme()
+        self._details_card.refresh_theme()

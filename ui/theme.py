@@ -1,58 +1,67 @@
 from dataclasses import dataclass
+from ui.personalization import current_theme
 
-from ui.personalization import current_accent
+
+class _ThemeColorsProxy:
+    """Proxy that reads colors from the active theme at access time."""
+    @property
+    def BG_BASE(self) -> str: return current_theme().bg
+    @property
+    def BG_SURFACE(self) -> str: return current_theme().surface
+    @property
+    def BG_SURFACE_HOVER(self) -> str: return current_theme().border
+    @property
+    def BG_CARD_ACTIVE(self) -> str: return current_theme().surface
+
+    @property
+    def BORDER_SUBTLE(self) -> str: return current_theme().border
+    @property
+    def BORDER_ACCENT(self) -> str: return current_theme().highlight
+
+    @property
+    def TEXT_PRIMARY(self) -> str: return current_theme().text
+    @property
+    def TEXT_SECONDARY(self) -> str: return current_theme().text
+    @property
+    def TEXT_MUTED(self) -> str: return current_theme().border
+
+    @property
+    def ACCENT_PRIMARY(self) -> str: return current_theme().highlight
+    @property
+    def ACCENT_HOVER(self) -> str: return current_theme().highlight
+    @property
+    def ACCENT_PRESSED(self) -> str: return current_theme().border
+
+    @property
+    def STATUS_OK(self) -> str: return current_theme().highlight
+    @property
+    def STATUS_WARN(self) -> str: return "#F59E0B"
+    @property
+    def STATUS_ERR(self) -> str: return "#EF4444"
 
 
-@dataclass(frozen=True)
-class ThemeColors:
-    # Surfaces (From the image)
-    BG_BASE: str = "#111111"       # Pure Black from image
-    BG_SURFACE: str = "#1A1A1A"    # Slightly lighter grey for cards
-    BG_SURFACE_HOVER: str = "#262626"
-    BG_CARD_ACTIVE: str = "#1F1F1F"
-
-    # Borders & Dividers
-    BORDER_SUBTLE: str = "#333333"
-    BORDER_ACCENT: str = "#C9EF35"  # Neon Lime
-
-    # Typography
-    TEXT_PRIMARY: str = "#F8FAFC"
-    TEXT_SECONDARY: str = "#A1A1AA"
-    TEXT_MUTED: str = "#71717A"
-
-    # Telemetry Accents (Use the Lime and Pink!)
-    ACCENT_PRIMARY: str = "#C9EF35" # Neon Lime
-    ACCENT_HOVER: str = "#B5D82A"
-    ACCENT_PRESSED: str = "#9EBF1E"
-    
-    STATUS_OK: str = "#C9EF35"      # Lime for OK
-    STATUS_WARN: str = "#FFD700"
-    # Gold for warning
-    STATUS_ERR: str = "#FF2B93"     # Hot Pink for Errors!
+# IMPORTANT: Export an INSTANCE, not the class
+ThemeColors = _ThemeColorsProxy()
 
 
 @dataclass(frozen=True)
 class ThemeFonts:
     FAMILY_UI: str = "Segoe UI, Inter, Arial, sans-serif"
     FAMILY_MONO: str = "Consolas, JetBrains Mono, monospace"
-    SIZE_HERO: int = 28      # was 20 (The Greeting)
-    SIZE_TITLE: int = 20     # was 15 (Laptop Workstation)
-    SIZE_BODY: int = 15      # was 13 (Main text, buttons)
-    SIZE_CAPTION: int = 13   # was 11 (Subtitles, badges)
+    SIZE_HERO: int = 28
+    SIZE_TITLE: int = 20
+    SIZE_BODY: int = 15
+    SIZE_CAPTION: int = 13
 
 
 class StyleSheets:
-    """Centralized Qt Style Sheet (QSS) builders for the application."""
-
     @staticmethod
     def get_main_stylesheet() -> str:
-        """Builds the app-wide QSS, tinted by the user's live accent palette."""
-        c = ThemeColors
+        c = ThemeColors  # Now this is the INSTANCE, so c.BG_BASE is a string
         f = ThemeFonts
-        accent = current_accent()
+        theme = current_theme()
 
         return f"""
-        /* Base Window & Generic Widgets */
         QMainWindow, QWidget {{
             background-color: {c.BG_BASE};
             color: {c.TEXT_PRIMARY};
@@ -65,33 +74,14 @@ class StyleSheets:
             border: none;
         }}
 
-        /* Left Telemetry Identity Panel */
         QFrame#IdentityPanel {{
             background-color: {c.BG_SURFACE};
             border: 1px solid {c.BORDER_SUBTLE};
             border-radius: 12px;
         }}
 
-        /* Interactive Telemetry Profile Cards */
-        QFrame#ProfileCard {{
-            background-color: {c.BG_SURFACE};
-            border: 1px solid {c.BORDER_SUBTLE};
-            border-radius: 10px;
-        }}
-
-        QFrame#ProfileCard:hover {{
-            background-color: {c.BG_SURFACE_HOVER};
-            border: 1px solid {c.TEXT_MUTED};
-        }}
-
-        QFrame#ProfileCard[selected="true"] {{
-            background-color: {c.BG_CARD_ACTIVE};
-            border: 2px solid {accent.primary};
-        }}
-
-        /* Primary Call-to-Action Button */
         QPushButton#PrimaryButton {{
-            background-color: {accent.primary};
+            background-color: {c.ACCENT_PRIMARY};
             color: {c.BG_BASE};
             border: none;
             border-radius: 8px;
@@ -100,47 +90,11 @@ class StyleSheets:
             font-size: {f.SIZE_BODY}px;
         }}
 
-        QPushButton#PrimaryButton:hover {{
-            background-color: {accent.hover};
-            color: {c.TEXT_PRIMARY};
-        }}
-
-        QPushButton#PrimaryButton:pressed {{
-            background-color: {accent.pressed};
-            color: {c.TEXT_PRIMARY};
-        }}
-
-        /* Secondary Ghost Button */
-        QPushButton#SecondaryButton {{
-            background-color: transparent;
-            color: {c.TEXT_SECONDARY};
-            border: 1px solid {c.BORDER_SUBTLE};
-            border-radius: 8px;
-            padding: 10px 16px;
-            font-weight: 600;
-            font-size: {f.SIZE_BODY}px;
-        }}
-
-        QPushButton#SecondaryButton:hover {{
-            background-color: {c.BG_SURFACE_HOVER};
-            color: {c.TEXT_PRIMARY};
-            border: 1px solid {c.TEXT_MUTED};
-        }}
-
-        QPushButton#SecondaryButton:pressed {{
-            background-color: {c.BG_SURFACE};
-        }}
-
-        /* CheckBox ("Skip welcome screen next time") */
         QCheckBox {{
-            color: {c.TEXT_SECONDARY};
+            color: {c.TEXT_PRIMARY};
             font-size: {f.SIZE_CAPTION}px;
             spacing: 8px;
             background-color: transparent;
-        }}
-
-        QCheckBox:hover {{
-            color: {c.TEXT_PRIMARY};
         }}
 
         QCheckBox::indicator {{
@@ -151,21 +105,16 @@ class StyleSheets:
             background-color: {c.BG_SURFACE};
         }}
 
-        QCheckBox::indicator:hover {{
-            border: 1px solid {accent.primary};
+        QCheckBox::indicator:checked {{
+            background-color: {c.ACCENT_PRIMARY};
+            border: 1px solid {c.ACCENT_PRIMARY};
         }}
 
-        QCheckBox::indicator:checked {{
-            background-color: {accent.primary};
-            border: 1px solid {accent.primary};
-        }}
-        
-        /* Retro Windows Tooltips */
         QToolTip {{
-            background-color: #FFFFE1;
-            color: #000000;
-            border: 1px solid #000000;
-            padding: 2px;
+            background-color: {c.BG_SURFACE};
+            color: {c.TEXT_PRIMARY};
+            border: 1px solid {c.ACCENT_PRIMARY};
+            padding: 4px;
             font-family: "Segoe UI", Tahoma, sans-serif;
             font-size: 12px;
         }}
@@ -173,7 +122,6 @@ class StyleSheets:
 
     @staticmethod
     def badge_style(bg_hex: str, text_hex: str) -> str:
-        """Returns an inline QSS pill style for status, OS, and privilege badges."""
         return (
             f"background-color: {bg_hex};"
             f"color: {text_hex};"

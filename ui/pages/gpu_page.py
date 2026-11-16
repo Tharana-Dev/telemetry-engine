@@ -6,6 +6,7 @@ from ui.data.gpu_worker import GpuWorker, GpuWorkerSnapshot
 from ui.widgets.stat_card import StatCard
 from ui.widgets.live_graph import LiveGraph
 
+
 class GpuPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -47,6 +48,7 @@ class GpuPage(QWidget):
         self.thread.started.connect(self.worker.work)
         self.worker.finished.connect(self.thread.quit)
         
+        # Dual Timers
         self.graph_timer = QTimer()
         self.graph_timer.timeout.connect(self.update_graphs)
         
@@ -54,29 +56,35 @@ class GpuPage(QWidget):
         self.card_timer.timeout.connect(self.update_cards)
 
     def _build_cards_if_needed(self, snapshot: GpuWorkerSnapshot):
-        """Dynamically builds StatCards for each detected GPU."""
-        if snapshot.gpus and not self._gpu_cards:
-            # Clear placeholder if any
+        """Dynamically builds StatCards for the iGPU AND all detected dGPUs."""
+        expected_card_count = len(snapshot.gpus) + (1 if snapshot.igpu_name else 0)
+        
+        if expected_card_count > 0 and len(self._gpu_cards) != expected_card_count:
+            # Clear existing cards
             while self._cards_layout.count():
                 item = self._cards_layout.takeAt(0)
                 if item.widget():
                     item.widget().deleteLater()
+            self._gpu_cards.clear()
 
-            # Create a card for each GPU
-            for idx, gpu in enumerate(snapshot.gpus):
-                name = gpu.name or f"GPU {idx}"
-                
-                card = StatCard(f"dGPU {idx}: {name}", ["Temp", "Utilization", "Power", "Fan Speed"])
-                self._cards_layout.addWidget(card, 0, idx)
-                self._gpu_cards[gpu.index] = card
+            col_idx = 0
             
-            # If no dGPU is found, show iGPU info
-            if not snapshot.gpus and snapshot.igpu_name:
-                card = StatCard("Integrated GPU", ["Name", "Status"])
-                card.update_row("Name", snapshot.igpu_name)
-                card.update_row("Status", "Active (Admin Required for stats)", "#ffbb33")
-                self._cards_layout.addWidget(card, 0, 0)
-                self._gpu_cards[-1] = card 
+            # 1. Build iGPU Card (if available)
+            if snapshot.igpu_name:
+                igpu_card = StatCard("Integrated GPU", ["Name", "Status"])
+                igpu_card.update_row("Name", snapshot.igpu_name)
+                igpu_card.update_row("Status", "Active (Driven by OS)", "#00ff00")
+                self._cards_layout.addWidget(igpu_card, 0, col_idx)
+                self._gpu_cards["igpu"] = igpu_card
+                col_idx += 1
+
+            # 2. Build dGPU Cards
+            for idx, gpu in enumerate(snapshot.gpus):
+                name = gpu.name or f"dGPU {idx}"
+                card = StatCard(f"dGPU {idx}: {name}", ["Temp", "Utilization", "Power", "Fan Speed"])
+                self._cards_layout.addWidget(card, 0, col_idx)
+                self._gpu_cards[gpu.index] = card
+                col_idx += 1
 
     def update_graphs(self):
         pending = self.worker.drain_pending_snapshots()
@@ -88,15 +96,14 @@ class GpuPage(QWidget):
 
         for snapshot in pending:
             if snapshot.gpus:
+                # Plot the primary (first) GPU on the graph
                 gpu = snapshot.gpus[0]
-                # If Temp/Util is None, default to 0 for the graph
                 temp = gpu.temperature_c if gpu.temperature_c is not None else 0.0
                 util = gpu.utilization_pct if gpu.utilization_pct is not None else 0.0
                 
                 self._temp_data.append(temp)
                 self._util_data.append(util)
             else:
-                # If no GPU, keep the graph flat
                 self._temp_data.append(0.0)
                 self._util_data.append(0.0)
 
@@ -107,9 +114,10 @@ class GpuPage(QWidget):
         self._util_graph.set_data(self._util_data)
 
     def update_cards(self):
-        if not self._latest_snapshot or not self._latest_snapshot.gpus:
+        if not self._latest_snapshot:
             return
 
+        # Update dGPUs
         for gpu in self._latest_snapshot.gpus:
             card = self._gpu_cards.get(gpu.index)
             if card:
@@ -168,8 +176,9 @@ class GpuPage(QWidget):
             self.thread.wait(2000)
         super().closeEvent(event)
 
-    def refresh_accent(self):
-        self._temp_graph.refresh_accent()
-        self._util_graph.refresh_accent()
+    def refresh_theme(self):
+        """Updates the graphs and cards when the user picks a new theme."""
+        self._temp_graph.refresh_theme()
+        self._util_graph.refresh_theme()
         for card in self._gpu_cards.values():
-            card.refresh_accent()
+            card.refresh_theme()

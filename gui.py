@@ -4,37 +4,24 @@ import sys
 
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QMainWindow, QWidget, QVBoxLayout, QStackedWidget, QLabel
+    QApplication, QHBoxLayout, QMainWindow, QWidget, QStackedWidget
 )
 
+# UI Components
 from ui.sidebar import Sidebar
 from ui.identity_panel import IdentityPanel
 from ui.launchpad_panel import LaunchpadPanel
 from ui.personalization import personalization
 from ui.system_probe import GetData
-from ui.theme import StyleSheets, ThemeColors, ThemeFonts
+from ui.theme import StyleSheets
+
+# Pages
 from ui.pages.dashboard_page import DashboardPage
 from ui.pages.cpu_page import CpuPage
 from ui.pages.memory_page import MemoryPage
-from ui.pages.network_page import NetworkPage
-from ui.pages.disk_page import DiskPage
 from ui.pages.gpu_page import GpuPage
-
-class PlaceholderPage(QWidget):
-    """Temporary page for the sectors we haven't built yet."""
-    def __init__(self, title: str, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        icon = QLabel("🚧", self)
-        icon.setStyleSheet("font-size: 64px; margin-bottom: 16px;")
-        
-        lbl = QLabel(f"{title} Graphs Coming Soon", self)
-        lbl.setStyleSheet(f"color: {ThemeColors.TEXT_MUTED}; font-size: {ThemeFonts.SIZE_HERO}px; font-weight: 700;")
-        
-        layout.addWidget(icon, alignment=Qt.AlignmentFlag.AlignHCenter)
-        layout.addWidget(lbl)
+from ui.pages.disk_page import DiskPage
+from ui.pages.network_page import NetworkPage
 
 
 class WelcomeWindow(QMainWindow):
@@ -43,14 +30,14 @@ class WelcomeWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Telemetry Mission Control")
-        self.setMinimumSize(1300, 900)
+        self.setMinimumSize(1100, 700)
         self.setStyleSheet(StyleSheets.get_main_stylesheet())
 
         self.profile = GetData().collect()
 
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
-        
+
         main_layout = QHBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -66,7 +53,7 @@ class WelcomeWindow(QMainWindow):
 
         self.page_indices = {}
 
-        # -- Build Home Page --
+        # -- Home Page --
         home_widget = QWidget(self)
         home_layout = QHBoxLayout(home_widget)
         home_layout.setContentsMargins(32, 32, 32, 32)
@@ -77,10 +64,10 @@ class WelcomeWindow(QMainWindow):
 
         home_layout.addWidget(self.identity_panel, stretch=35)
         home_layout.addWidget(self.launchpad_panel, stretch=65)
-        
+
         self.page_indices["home"] = self.page_stack.addWidget(home_widget)
 
-        # Build the real dashboard page
+        # -- Telemetry Pages --
         self.dashboard_page = DashboardPage(self)
         self.page_indices["dashboard"] = self.page_stack.addWidget(self.dashboard_page)
 
@@ -90,32 +77,23 @@ class WelcomeWindow(QMainWindow):
         self.memory_page = MemoryPage(self)
         self.page_indices["memory"] = self.page_stack.addWidget(self.memory_page)
 
-        self.network_page = NetworkPage(self)
-        self.page_indices["network"] = self.page_stack.addWidget(self.network_page)
+        self.gpu_page = GpuPage(self)
+        self.page_indices["gpu"] = self.page_stack.addWidget(self.gpu_page)
 
         self.disk_page = DiskPage(self)
         self.page_indices["disk"] = self.page_stack.addWidget(self.disk_page)
 
-        self.gpu_page = GpuPage(self)
-        self.page_indices["gpu"] = self.page_stack.addWidget(self.gpu_page)
+        self.network_page = NetworkPage(self)
+        self.page_indices["network"] = self.page_stack.addWidget(self.network_page)
 
-        # Build placeholders for the rest
-        placeholder_ids = []
-        for page_id in placeholder_ids:
-            placeholder = PlaceholderPage(page_id.upper(), self)
-            self.page_indices[page_id] = self.page_stack.addWidget(placeholder)
-        
-        for page_id in placeholder_ids:
-            # Make the title look nice (e.g., "dashboard" -> "DASHBOARD")
-            placeholder = PlaceholderPage(page_id.upper(), self)
-            self.page_indices[page_id] = self.page_stack.addWidget(placeholder)
-
-        # 4. Connect Signals
+        # --- Connect Signals ---
         self.launchpad_panel.start_requested.connect(self.switch_page)
         self.launchpad_panel.restart_admin_requested.connect(self._restart_as_admin)
-        personalization().accent_changed.connect(self._on_accent_changed)
 
-        # 5. Set Default Page
+        # NEW THEME SIGNAL (was accent_changed)
+        personalization().theme_changed.connect(self._on_theme_changed)
+
+        # Set Default Page
         self.switch_page("home")
 
     def switch_page(self, page_id: str) -> None:
@@ -123,24 +101,20 @@ class WelcomeWindow(QMainWindow):
             self.page_stack.setCurrentIndex(self.page_indices[page_id])
             self.sidebar.set_active_page(page_id)
 
-    def _on_accent_changed(self) -> None:
+    def _on_theme_changed(self) -> None:
+        """Called when the user clicks a theme swatch in the sidebar."""
         self.setStyleSheet(StyleSheets.get_main_stylesheet())
-        self.sidebar.refresh_accent()
-        self.identity_panel.refresh_accent()
-        self.launchpad_panel.refresh_accent()
-        if hasattr(self, 'dashboard_page'):
-            self.dashboard_page.refresh_accent()
-        if hasattr(self, 'cpu_page'):
-            self.cpu_page.refresh_accent()
-        if hasattr(self, 'memory_page'):
-            self.memory_page.refresh_accent()
-        if hasattr(self, 'network_page'):
-            self.network_page.refresh_accent()
-        if hasattr(self, 'disk_page'):
-            self.disk_page.refresh_accent()
-        if hasattr(self, 'gpu_page'):
-            self.gpu_page.refresh_accent()
 
+        self.sidebar.refresh_theme()
+        self.identity_panel.refresh_theme()
+        self.launchpad_panel.refresh_theme()
+
+        self.dashboard_page.refresh_theme()
+        self.cpu_page.refresh_theme()
+        self.memory_page.refresh_theme()
+        self.gpu_page.refresh_theme()
+        self.disk_page.refresh_theme()
+        self.network_page.refresh_theme()
 
     def _restart_as_admin(self) -> None:
         if sys.platform != "win32":
@@ -158,31 +132,6 @@ class WelcomeWindow(QMainWindow):
         )
         if result > 32:
             QApplication.quit()
-
-    def closeEvent(self, event):
-        """Safely shut down background threads and timers before the window closes."""
-        page_names = ['dashboard_page', 'cpu_page', 'memory_page', 'network_page','disk_page', 'gpu_page']
-
-        if self.window().isMinimized():
-            return  # Skip shutdown - the app was just minimized
-        
-        for name in page_names:
-            page = getattr(self, name, None)
-            if page:
-                # Stop the UI timer if the page has one
-                if hasattr(page, 'ui_timer') and page.ui_timer:
-                    page.ui_timer.stop()
-                
-                # Signal the worker thread to stop
-                if hasattr(page, 'worker') and page.worker:
-                    page.worker._stop_event.set()
-                
-                # Wait for the thread to finish cleanly
-                if hasattr(page, 'thread') and page.thread and page.thread.isRunning():
-                    page.thread.quit()  # Optional: ensures QThread event loop exits
-                    page.thread.wait(2000)
-                    
-        super().closeEvent(event)
 
 
 if __name__ == "__main__":

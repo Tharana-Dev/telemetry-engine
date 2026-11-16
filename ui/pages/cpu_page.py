@@ -1,4 +1,3 @@
-import numpy as np
 from PySide6.QtCore import QThread, QTimer, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
@@ -6,6 +5,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from ui.data.cpu_worker import CpuWorker
 from ui.widgets.stat_card import StatCard
 from ui.widgets.live_graph import LiveGraph
+
 
 class CpuPage(QWidget):
     def __init__(self, parent=None):
@@ -16,7 +16,7 @@ class CpuPage(QWidget):
         self._layout.setContentsMargins(32, 32, 32, 32)
         self._layout.setSpacing(20)
 
-        # 1. Setup Graphs (Using our new reusable widget)
+        # 1. Setup Graphs
         self._graph_layout = QHBoxLayout()
         self._graph_layout.setSpacing(20)
         
@@ -62,13 +62,11 @@ class CpuPage(QWidget):
             self._usage_data.append(usage)
             self._freq_data.append(freq_ghz)
 
-        # Keep only the last 600 points (60 seconds)
         self._usage_data = self._usage_data[-600:]
         self._freq_data = self._freq_data[-600:]
 
         latest = pending[-1] 
         
-        # Update Cards
         if latest.cpu_name:
             self._info_card.update_row("Name", latest.cpu_name)
         if latest.cpu_vendor:
@@ -86,7 +84,6 @@ class CpuPage(QWidget):
                 color = "#ff4444" if self._max_temp > 85 else None
                 self._metrics_card.update_row("Max Temp", f"{self._max_temp:.1f} °C", color)
             
-        # Update Graphs (One line per graph!)
         self._usage_graph.set_data(self._usage_data)
         self._freq_graph.set_data(self._freq_data)
 
@@ -100,7 +97,7 @@ class CpuPage(QWidget):
     def hideEvent(self, event):
         super().hideEvent(event)
         if self.window().isMinimized():
-            return  # Skip shutdown - the app was just minimized
+            return
         self.timer.stop()
         if hasattr(self, 'worker') and self.worker:
             self.worker._stop_event.set()
@@ -116,11 +113,8 @@ class CpuPage(QWidget):
             self.thread.wait(2000)
         super().closeEvent(event)
 
-    def refresh_accent(self):
-        # The LiveGraph handles its own color updates
-        self._usage_graph.refresh_accent()
-        self._freq_graph.refresh_accent()
-        
-        # The StatCards handle their own color updates
-        self._info_card.refresh_accent()
-        self._metrics_card.refresh_accent()
+    def refresh_theme(self):
+        self._usage_graph.refresh_theme()
+        self._freq_graph.refresh_theme()
+        self._info_card.refresh_theme()
+        self._metrics_card.refresh_theme()
