@@ -162,6 +162,11 @@ class WelcomeWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    
+    # --- Set the App Icon ---
+    from PySide6.QtGui import QIcon
+    app.setWindowIcon(QIcon("telemetry.ico")) # Or "icon.png" if you prefer
+    
     window = WelcomeWindow()
 
     window.launch_dashboard.connect(
