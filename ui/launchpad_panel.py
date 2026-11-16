@@ -2,7 +2,7 @@ import math
 from datetime import datetime
 
 from PySide6.QtCore import Qt, Signal, QTimer, QRectF
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -153,10 +153,27 @@ class LaunchpadPanel(QWidget):
         hero_layout.setContentsMargins(32, 24, 32, 24)
         hero_layout.setSpacing(8)
 
-        # Title
-        self._about_title = QLabel("ABOUT & SYSTEM GUIDE", self._hero_box)
-        hero_layout.addWidget(self._about_title)
+        # Title row: Logo + Title
+        title_row = QHBoxLayout()
+        title_row.setSpacing(12)
 
+        self._logo_label = QLabel(self._hero_box)
+        self._logo_label.setFixedSize(32, 32)
+        self._logo_label.setStyleSheet("border: none; background: transparent;")
+        
+        pixmap = QPixmap("icon.png")
+        if not pixmap.isNull():
+            self._logo_label.setPixmap(
+                pixmap.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            )
+        
+        self._about_title = QLabel("ABOUT & SYSTEM GUIDE", self._hero_box)
+        
+        title_row.addWidget(self._logo_label)
+        title_row.addWidget(self._about_title)
+        title_row.addStretch()
+        
+        hero_layout.addLayout(title_row)
         self._section_headings: list[QLabel] = []
         self._section_bodies: list[QLabel] = []
 
