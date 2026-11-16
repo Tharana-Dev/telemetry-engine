@@ -28,9 +28,12 @@ telemetry.log
 main.build/
 main.dist/
 main.onefile-build/
-build/
+build*/
 *.exe
 telemetry-engine-linux
 
 *.xml
 *.zip
+*.iss
+
+app.manifest
