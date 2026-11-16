@@ -14,6 +14,7 @@ _SVGS = {
     "gpu": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="7" cy="12" r="3"/><circle cx="7" cy="12" r="1"/><path d="M12 10h6M12 14h6"/></svg>',
     "disk": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M2 10h20"/><path d="M6 6h.01M6 14h.01"/></svg>',
     "network": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><path d="M5 16v-3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3"/><path d="M12 8V2"/></svg>',
+    "notifications": '<svg viewBox="0 0 24 24" fill="none" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
 }
 
 class _SidebarButton(QPushButton):
@@ -124,7 +125,7 @@ class Sidebar(QWidget):
 
         nav_items = [
             ("home", "Home"), ("dashboard", "Overview"), ("cpu", "CPU"),
-            ("memory", "Memory"), ("gpu", "GPU"), ("disk", "Disk"), ("network", "Network")
+            ("memory", "Memory"), ("gpu", "GPU"), ("disk", "Disk"), ("network", "Network"),("notifications", "Notifications")
         ]
 
         self._nav_buttons = {}

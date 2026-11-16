@@ -1,28 +1,11 @@
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+
 from PySide6.QtCore import QObject, Signal
-import platform
+from ui.models.get_sampler import get_sampler
 from engine.logger import logger
-
-@dataclass(frozen=True)
-class CpuWorkerSnapshot:
-    cpu_name: str | None = None
-    cpu_usage_pct: float | None = None
-    cpu_freq_mhz: int | None = None # <--- Live speed
-    cpu_temp: float | None = None
-    cpu_vendor: str | None = "Unknown"
-    cpu_base_speed_mhz: int | None = None    # <--- Base speed
-
-
-def get_sampler():
-    if platform.system() == "Windows":
-        from engine.universal_sampler import PsutilCollector
-        return PsutilCollector()
-    else:
-        from engine.linux_sampler import LinuxCollector
-        return LinuxCollector()
+from ui.models.worker_return_models import CpuWorkerSnapshot
 
 class CpuWorker(QObject):
     finished = Signal()

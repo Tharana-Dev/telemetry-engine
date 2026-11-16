@@ -1,47 +1,11 @@
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
 from PySide6.QtCore import QObject, Signal
-import platform
+from ui.models.get_sampler import get_sampler
 
 from engine.logger import logger
-
-@dataclass(frozen=True)
-class DashboardSnapshot:
-    cpu_name: str | None = None
-    cpu_usage_pct: float | None = None
-    cpu_freq_mhz: int | None = None
-    board_vendor: str | None = None
-
-    ram_total_gb: float | None = None
-    ram_used_gb: float | None = None
-    ram_used_pct: float | None = None
-    
-    igpu_name: str | None = None
-    dgpu_name: str | None = None
-    
-    battery_capacity: int | None = None
-    battery_status: str | None = None
-    battery_online: bool | None = None
-    battery_health: float | None = None
-    
-    disk_read_bps: float | None = None
-    disk_write_bps: float | None = None
-    disk_space_used_pct: float | None = None
-    disk_space_free_gb: float | None = None
-    
-    net_status: str | None = None
-    net_download_bps: float | None = None
-    net_upload_bps: float | None = None
-
-def get_sampler():
-    if platform.system() == "Windows":
-        from engine.universal_sampler import PsutilCollector
-        return PsutilCollector()
-    else:
-        from engine.linux_sampler import LinuxCollector
-        return LinuxCollector()
+from ui.models.worker_return_models import DashboardSnapshot
 
 class DashboardDataCollector(QObject):
     finished = Signal()

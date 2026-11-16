@@ -1,6 +1,9 @@
 import ctypes
 import os
 import sys
+from ui.pages.notification_page import NotificationPage
+from ui.data.notification_worker import NotificationWorker
+from PySide6.QtCore import QThread
 
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
@@ -86,6 +89,22 @@ class WelcomeWindow(QMainWindow):
         self.network_page = NetworkPage(self)
         self.page_indices["network"] = self.page_stack.addWidget(self.network_page)
 
+        self.notification_page = NotificationPage(self)
+        self.page_indices["notifications"] = self.page_stack.addWidget(self.notification_page)
+
+        # 3. Start the notification worker (runs for the whole app lifetime)
+        self.notification_thread = QThread()
+        self.notification_worker = NotificationWorker()
+        self.notification_worker.moveToThread(self.notification_thread)
+
+        self.notification_thread.started.connect(self.notification_worker.work)
+        self.notification_worker.finished.connect(self.notification_thread.quit)
+
+        self.notification_worker.notification_added.connect(self.notification_page.add_notification)
+        self.notification_worker.notification_cleared.connect(self.notification_page.mark_resolved)
+
+        self.notification_thread.start()
+
         # --- Connect Signals ---
         self.launchpad_panel.start_requested.connect(self.switch_page)
         self.launchpad_panel.restart_admin_requested.connect(self._restart_as_admin)
@@ -115,6 +134,7 @@ class WelcomeWindow(QMainWindow):
         self.gpu_page.refresh_theme()
         self.disk_page.refresh_theme()
         self.network_page.refresh_theme()
+        self.notification_page.refresh_theme()
 
     def _restart_as_admin(self) -> None:
         if sys.platform != "win32":
@@ -132,6 +152,12 @@ class WelcomeWindow(QMainWindow):
         )
         if result > 32:
             QApplication.quit()
+
+    def closeEvent(self, event):
+        self.notification_worker._stop_event.set()
+        self.notification_thread.quit()
+        self.notification_thread.wait(2000)
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":

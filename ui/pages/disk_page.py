@@ -2,7 +2,7 @@ from PySide6.QtCore import QThread, QTimer, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
-from ui.data.disk_worker import DiskWorker, DiskWorkerSnapshot
+from ui.data.disk_worker import DiskWorker
 from ui.widgets.stat_card import StatCard
 from ui.widgets.live_graph import LiveGraph
 

@@ -1,28 +1,10 @@
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from ui.models.worker_return_models import DiskWorkerSnapshot
 from PySide6.QtCore import QObject, Signal
-import platform
+from ui.models.get_sampler import get_sampler
 from engine.logger import logger
-
-def get_sampler():
-    if platform.system() == "Windows":
-        from engine.universal_sampler import PsutilCollector
-        return PsutilCollector()
-    else:
-        from engine.linux_sampler import LinuxCollector
-        return LinuxCollector()
-
-@dataclass(frozen=True)
-class DiskWorkerSnapshot:
-    device: str | None
-    read_bps: float | None
-    write_bps: float | None
-    total_bytes: int | None
-    used_bytes: int | None
-    free_bytes: int | None
-    percent: float | None   
 
 class DiskWorker(QObject):
     finished = Signal()
